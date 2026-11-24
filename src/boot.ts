@@ -68,32 +68,46 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     log: (line: string) => { try { console.debug('[rc-direct] ' + line) } catch { /* a missing console is not a failure */ } },
   }) : undefined
   /** Every same-origin call the app makes: uploads, streaming and previews take the live line. */
-  const routedFetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const routedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input)
     let sameOrigin = false
     try { sameOrigin = new URL(url, location.href).origin === location.origin } catch { return originalFetch(input, init) }
-    if (!sameOrigin || !link?.ready) return originalFetch(input, init)
+    if (!sameOrigin || !link) return originalFetch(input, init)
     const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
     const safeRead = method === 'GET' || method === 'HEAD'
-    if (link.line === 'direct') return link.fetch(input, init).catch(error => {
-      if (!safeRead || (init?.signal ?? (input instanceof Request ? input.signal : undefined))?.aborted) throw error
-      return originalFetch(input, init)
-    })
-    if (!safeRead) return link.preferDirectForWrite().then(useDirect => useDirect ? link.fetch(input, init) : originalFetch(input, init))
-    return originalFetch(input, init).then(response => {
-      if (safeRead && link.ready && [502, 503, 504].includes(response.status)) return link.fetch(input, init)
-      return response
-    }, error => {
-      if (!safeRead || (init?.signal ?? (input instanceof Request ? input.signal : undefined))?.aborted || !link.ready) throw error
-      return link.fetch(input, init)
-    })
+    const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined)
+    const useDirect = link.ready && (link.line === 'direct' || (!safeRead && await link.preferDirectForWrite()))
+    if (useDirect) {
+      try { return await link.fetch(input, init) } catch (error) { if (!safeRead || signal?.aborted) throw error }
+    }
+    // Only a read can try the other line after an ambiguous failure. A write may already have reached the Host.
+    let response: Response
+    try { response = await originalFetch(input, init) } catch (error) {
+      if (signal?.aborted) throw error
+      link.invalidateUpstream()
+      if (safeRead && !useDirect && link.ready) return link.fetch(input, init)
+      throw error
+    }
+    if ([502, 503, 504].includes(response.status)) {
+      link.invalidateUpstream()
+      if (safeRead && !useDirect && link.ready && !signal?.aborted) {
+        void response.body?.cancel().catch(() => {})
+        return link.fetch(input, init)
+      }
+    }
+    return response
   }
   globals.__DSH_FILE_UPLOAD__ = { fetch: routedFetch }
   // Read-only diagnostics: a phone that cannot reach its own line is otherwise undebuggable.
   if (link) globals.__DSH_DIRECT__ = { state: () => link.state(), ready: () => link.ready }
   if (link) {
     setTimeout(() => { void link.start() }, 0)
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) link.checkLines() })
+    const checkNetwork = () => { link.invalidateUpstream(); if (!document.hidden) link.checkLines() }
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) checkNetwork() })
+    window.addEventListener('offline', link.invalidateUpstream)
+    window.addEventListener('online', checkNetwork)
+    const network = (navigator as Navigator & { connection?: EventTarget }).connection
+    network?.addEventListener('change', checkNetwork)
     if (window.isSecureContext && navigator.serviceWorker) {
       navigator.serviceWorker.addEventListener('message', event => {
         const port = event.ports[0]
@@ -251,9 +265,9 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     return { rev: value.rev, entries, batches: (Array.isArray(value.batches) ? value.batches : []) as Graph['batches'] }
   }
   /** Only a Host that took the page over leaves a baseline, so a broken boot is retried as broken. */
-  const baseline = (): string | null | false => {
-    try { const store = (window as unknown as { localStorage?: Storage }).localStorage; return store ? store.getItem(STORE_KEY) : false } catch { return false }
-  }
+  const previousRevision = (() => {
+    try { const store = window.localStorage; return store ? store.getItem(STORE_KEY) : false } catch { return false }
+  })()
   const remember = (): void => { try { if (graph) (window as unknown as { localStorage?: Storage }).localStorage?.setItem(STORE_KEY, graph.rev) } catch { /* a page without storage keeps no baseline */ } }
   const observe = (registration: unknown): void => {
     if (!graph) { if (early.length < 1000) early.push(registration); return }
@@ -285,12 +299,14 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     }
     // A batch that already executed without one row is retried once as that row's own bundle.
     for (const row of snapshot.entries) if (!singleAt.has(addr(row.url))) singleAt.set(addr(row.url), rowAt.get(bare(row.id))!)
-    const kept = baseline()
-    check = kept === false ? 'unavailable' : kept === null ? 'first' : kept === snapshot.rev ? 'same' : 'changed'
+    check = previousRevision === false ? 'unavailable' : previousRevision === null ? 'first' : previousRevision === snapshot.rev ? 'same' : 'changed'
     for (const registration of early.splice(0)) observe(registration)
     paint()
   }
-  const removeScreen = (): void => { screen?.remove(); screen = null }
+  const removeScreen = (): void => {
+    for (const name in timers) clearTimeout(timers[name])
+    screen?.remove(); screen = null
+  }
   const paint = (): void => {
     if (!screen) return
     clearTimeout(timers.progress); timers.progress = undefined
@@ -363,6 +379,7 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
   const finishReady = (): void => {
     if (result === 'ready') return
     phase = result = 'ready'; observer.disconnect(); scheduleReport(100); remember()
+    if (previousRevision || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { removeScreen(); return }
     screen?.hideControls()
     if (check === 'pending') { check = 'unknown'; paint() }
     if (!holdingVerdict) showComplete()
@@ -370,7 +387,6 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
   const finishFailed = (boot: HTMLElement): void => {
     if (result === 'failed') return
     phase = result = 'failed'; recordError('official-startup-failure'); observer.disconnect(); scheduleReport(100)
-    for (const name in timers) clearTimeout(timers[name])
     removeScreen()
     let status = boot.querySelector<HTMLElement>('[data-dsh-rc-boot-status]')
     if (!status) {
@@ -607,7 +623,7 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
   }
   window.addEventListener('dsh-rc-offline', () => {
     showReconnect()
-    if (link) { void link.probe(); return }
+    if (link) { link.invalidateUpstream(); void link.probe(); return }
     if (!lanFallback || fallbackTried) return
     // One short grace period: a reconnect that succeeds clears this timer.
     clearTimeout(fallbackTimer)

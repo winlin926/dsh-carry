@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   WAYS,
   checkedAtLabel,
@@ -13,6 +13,7 @@ import {
   publicNodeProtocolLabel,
   serviceStateLabel,
   sortPublicNodes,
+  watchLocalPairings,
   when,
 } from '../src/client/index.js'
 import type { PublicNode } from '../src/client/index.js'
@@ -234,6 +235,38 @@ describe('pairing page', () => {
     expect(page).not.toContain('verificationCode')
     expect(page).not.toContain('8 位')
     expect(page).not.toContain('短码')
+  })
+})
+
+describe('sidebar pairing approvals', () => {
+  it('only watches on the local page, including a foreground return', () => {
+    vi.useFakeTimers()
+    const page = Object.assign(new EventTarget(), { hidden: false })
+    vi.stubGlobal('document', page)
+    const check = vi.fn()
+    try {
+      vi.stubGlobal('__DSH_REMOTE_CONTROL__', true)
+      expect(watchLocalPairings(check)).toBeUndefined()
+      expect(vi.getTimerCount()).toBe(0)
+      vi.advanceTimersByTime(60_000)
+      page.dispatchEvent(new Event('visibilitychange'))
+      expect(check).not.toHaveBeenCalled()
+
+      vi.stubGlobal('__DSH_REMOTE_CONTROL__', undefined)
+      const stop = watchLocalPairings(check)!
+      expect(check).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(2500)
+      expect(check).toHaveBeenCalledTimes(2)
+      page.hidden = true
+      vi.advanceTimersByTime(2500)
+      page.hidden = false
+      page.dispatchEvent(new Event('visibilitychange'))
+      expect(check).toHaveBeenCalledTimes(3)
+      stop()
+      page.dispatchEvent(new Event('visibilitychange'))
+      expect(check).toHaveBeenCalledTimes(3)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally { vi.unstubAllGlobals(); vi.useRealTimers() }
   })
 })
 

@@ -11,8 +11,8 @@ import {
 export interface DirectTransport {
   send(data: Uint8Array): void
   close(): void
-  /** Bytes queued but not yet handed to the network, when the transport can report it. */
-  bufferedAmount?: number
+  readonly bufferedAmount: number
+  onBufferedAmountLow(threshold: number, listener: () => void): () => void
 }
 
 export interface DirectBridgeOptions {
@@ -27,6 +27,11 @@ export interface DirectBridgeOptions {
 export interface DirectStats { requests: number; sockets: number; received: number; sent: number }
 const MAX_SOCKET_MESSAGE = 32 * 1024 * 1024
 const MAX_EXCHANGES = 32
+const RESPONSE_HIGH_WATER = 128 * 1024
+const RESPONSE_LOW_WATER = 32 * 1024
+export const DIRECT_SEND_QUEUE_LIMIT = 16 * 1024 * 1024
+const CONTROL_SEND_RESERVE = 32 * 1024
+const SHORT_MESSAGE_SEND_RESERVE = 128 * 1024
 
 /** Headers a frame may not control: they describe this hop, not the phone's request. */
 const BLOCKED = new Set([
@@ -36,7 +41,7 @@ const BLOCKED = new Set([
   'proxy-authorization', 'proxy-connection', 'upgrade-insecure-requests',
 ])
 
-interface HttpCall { req: ClientRequest; res?: IncomingMessage; timer?: ReturnType<typeof setTimeout>; ended?: boolean }
+interface HttpCall { req: ClientRequest; res?: IncomingMessage; timer?: ReturnType<typeof setTimeout>; ended?: boolean; pump?: () => void }
 interface SocketMessage { binary: boolean; chunks: Buffer[]; size: number }
 
 /**
@@ -66,6 +71,15 @@ export class DirectBridge {
     }
     const reply = (t: DirectFrame['t'], id: string, value: unknown): void => send({ t, id, payload: controlPayload(value) })
     const fail = (id: string, code: string, message: string): void => reply('fail', id, { code, message })
+    let congested = false
+    const canSendBody = (): boolean => {
+      if (transport.bufferedAmount >= RESPONSE_HIGH_WATER) congested = true
+      return !congested
+    }
+    const unsubscribe = transport.onBufferedAmountLow(RESPONSE_LOW_WATER, () => {
+      congested = false
+      for (const call of this.calls.values()) call.pump?.()
+    })
 
     return {
       handle: (data: Uint8Array): void => {
@@ -76,11 +90,11 @@ export class DirectBridge {
         try { switch (frame.t) {
           case 'ping': reply('pong', frame.id, readControl(frame)); return
           case 'pong': return
-          case 'open': this.open(frame.id, readControl(frame), send, fail); return
+          case 'open': this.open(frame.id, readControl(frame), send, fail, canSendBody); return
           case 'body': this.write(frame.id, frame.payload); return
           case 'end': this.endCall(frame.id); return
           case 'cancel': this.cancel(frame.id); return
-          case 'ws.open': this.openSocket(frame.id, readControl(frame), reply, send); return
+          case 'ws.open': this.openSocket(frame.id, readControl(frame), reply, send, transport); return
           case 'ws.text': this.startSocketMessage(frame.id, false, frame.payload); return
           case 'ws.bin': this.startSocketMessage(frame.id, true, frame.payload); return
           case 'ws.cont': this.continueSocketMessage(frame.id, frame.payload); return
@@ -90,6 +104,7 @@ export class DirectBridge {
       },
       dispose: (): void => {
         this.disposed = true
+        unsubscribe()
         for (const id of [...this.calls.keys()]) this.cancel(id)
         for (const id of [...this.sockets.keys()]) this.sockets.get(id)?.terminate()
         this.sockets.clear()
@@ -113,7 +128,7 @@ export class DirectBridge {
     return { ...headers, host, origin: 'http://' + host, 'sec-fetch-site': 'same-origin', 'accept-encoding': 'identity', [DIRECT_MARK]: this.options.mark() }
   }
 
-  private open(id: string, input: Record<string, unknown>, send: (frame: DirectFrame) => void, fail: (id: string, code: string, message: string) => void): void {
+  private open(id: string, input: Record<string, unknown>, send: (frame: DirectFrame) => void, fail: (id: string, code: string, message: string) => void, canSendBody: () => boolean): void {
     if (this.calls.has(id) || this.sockets.has(id) || this.calls.size + this.sockets.size >= MAX_EXCHANGES) { fail(id, 'BUSY', '直连请求数量达到上限或请求重复。'); return }
     const method = typeof input.method === 'string' ? input.method.toUpperCase() : 'GET'
     const path = typeof input.path === 'string' && safePath(input.path) ? input.path : undefined
@@ -124,24 +139,48 @@ export class DirectBridge {
     const req = httpRequest({ host: '127.0.0.1', port, method, path, headers: this.headers(input, port) })
     const call: HttpCall = { req }
     this.calls.set(id, call)
-    call.timer = setTimeout(() => { this.cancel(id); fail(id, 'TIMEOUT', '直连请求超时。') }, this.options.requestTimeoutMs ?? DIRECT_REQUEST_TIMEOUT_MS)
-    if (call.timer.unref) call.timer.unref()
+    const active = () => this.calls.get(id) === call
+    const progress = () => {
+      if (call.timer) { call.timer.refresh(); return }
+      call.timer = setTimeout(() => {
+        if (!active()) return
+        this.cancel(id)
+        fail(id, 'TIMEOUT', '直连请求超时。')
+      }, this.options.requestTimeoutMs ?? DIRECT_REQUEST_TIMEOUT_MS).unref()
+    }
+    progress()
     req.on('response', res => {
+      if (!active()) { res.destroy(); return }
       call.res = res
-      if (call.timer) clearTimeout(call.timer)
+      const eventStream = /^text\/event-stream(?:\s*;|\s*$)/i.test(res.headers['content-type'] ?? '')
       const headers: Record<string, string | string[]> = {}
       for (const [name, value] of Object.entries(res.headers)) {
         if (value === undefined || name === 'connection' || name === 'transfer-encoding' || name === 'keep-alive' || name === 'set-cookie') continue
         headers[name] = value
       }
       send({ t: 'result', id, payload: controlPayload({ status: res.statusCode ?? 502, headers }) })
-      res.on('data', (chunk: Buffer) => {
-        for (let offset = 0; offset < chunk.length; offset += DIRECT_MAX_FRAME) {
-          send({ t: 'chunk', id, payload: new Uint8Array(chunk.subarray(offset, offset + DIRECT_MAX_FRAME)) })
+      progress()
+      // Pull at most one frame past the high watermark across all responses. Control frames can
+      // still use the channel while Node backpressures the upstream sockets in readable mode.
+      const pump = () => {
+        if (!active()) return
+        while (res.readableLength > 0 && canSendBody()) {
+          const chunk: Buffer | null = res.read(Math.min(DIRECT_MAX_FRAME, res.readableLength))
+          if (!chunk) break
+          send({ t: 'chunk', id, payload: chunk })
+          if (!active()) return
+          progress()
         }
-      })
-      res.on('end', () => { send({ t: 'done', id, payload: new Uint8Array() }); this.finish(id) })
-      res.on('error', error => { fail(id, 'RESPONSE_ERROR', describe(error)); this.finish(id) })
+        if (res.readableLength === 0) {
+          res.read(0)
+          if (eventStream) { clearTimeout(call.timer); call.timer = undefined }
+        } else if (!call.timer) progress() // Even an SSE stream can stall on queued data.
+      }
+      call.pump = pump
+      res.on('readable', pump)
+      res.on('end', () => { if (active()) { this.finish(id); send({ t: 'done', id, payload: new Uint8Array() }) } })
+      res.on('error', error => { if (active()) { this.finish(id); fail(id, 'RESPONSE_ERROR', describe(error)) } })
+      pump()
     })
     req.on('error', error => { if (this.calls.get(id) === call) { fail(id, 'REQUEST_ERROR', describe(error)); this.finish(id) } })
     // A GET or HEAD body never arrives, so waiting for an `end` frame would hold the request open
@@ -153,19 +192,21 @@ export class DirectBridge {
     const call = this.calls.get(id)
     if (!call || call.ended) return
     call.ended = true
+    call.timer?.refresh()
     call.req.end()
   }
 
   private write(id: string, payload: Uint8Array): void {
     const call = this.calls.get(id)
-    if (!call || call.res || call.ended) return
+    if (!call || call.res || call.ended || !payload.byteLength) return
     if (call.req.writableLength > 16 * 1024 * 1024) { this.cancel(id); throw new Error('Upload queue full') }
     call.req.write(Buffer.from(payload))
+    call.timer?.refresh()
   }
 
   private cancel(id: string): void {
     const call = this.calls.get(id)
-    if (call) { call.res?.destroy(); call.req.destroy(); this.finish(id) }
+    if (call) { this.finish(id); call.res?.destroy(); call.req.destroy() }
     const socket = this.sockets.get(id)
     if (socket) { this.socketMessages.delete(id); socket.terminate() }
   }
@@ -205,9 +246,20 @@ export class DirectBridge {
     if (socket?.readyState === WebSocket.OPEN) socket.send(Buffer.concat(message.chunks), { binary: message.binary })
   }
 
-  private sendSocketMessage(id: string, data: Buffer, binary: boolean, send: (frame: DirectFrame) => void): void {
+  private sendSocketMessage(id: string, data: Buffer, binary: boolean, send: (frame: DirectFrame) => void, transport: DirectTransport): void {
+    const socket = this.sockets.get(id)
+    if (socket?.readyState !== WebSocket.OPEN) return
     const type = binary ? 'ws.bin' : 'ws.text'
     const limit = DIRECT_MAX_FRAME - 1
+    const frames = Math.max(1, Math.ceil(data.length / limit))
+    const wireBytes = data.length + frames * (4 + id.length)
+    // ponytail: reserve space in the shared ordered queue. Use another channel if short
+    // messages need to overtake bytes already queued.
+    const reserve = frames === 1 ? CONTROL_SEND_RESERVE : SHORT_MESSAGE_SEND_RESERVE
+    if (transport.bufferedAmount + wireBytes > DIRECT_SEND_QUEUE_LIMIT - reserve) {
+      socket.close(1013, 'WebSocket send queue full')
+      return
+    }
     let offset = 0
     do {
       const end = Math.min(offset + limit, data.length)
@@ -219,7 +271,7 @@ export class DirectBridge {
     } while (offset < data.length)
   }
 
-  private openSocket(id: string, input: Record<string, unknown>, reply: (t: DirectFrame['t'], id: string, value: unknown) => void, send: (frame: DirectFrame) => void): void {
+  private openSocket(id: string, input: Record<string, unknown>, reply: (t: DirectFrame['t'], id: string, value: unknown) => void, send: (frame: DirectFrame) => void, transport: DirectTransport): void {
     const path = typeof input.path === 'string' && safePath(input.path) ? input.path : undefined
     if (!path || this.sockets.has(id) || this.calls.has(id) || this.calls.size + this.sockets.size >= MAX_EXCHANGES) { reply('ws.ack', id, { ok: false, message: '直连 WebSocket 路径不合法或连接数量达到上限。' }); return }
     const port = this.options.port()
@@ -239,7 +291,7 @@ export class DirectBridge {
       opened = true
       reply('ws.ack', id, { ok: true, protocol: socket.protocol })
     })
-    socket.on('message', (data, binary) => this.sendSocketMessage(id, toBuffer(data), binary, send))
+    socket.on('message', (data, binary) => this.sendSocketMessage(id, toBuffer(data), binary, send, transport))
     socket.once('close', (code, reason) => {
       this.sockets.delete(id)
       this.socketMessages.delete(id)

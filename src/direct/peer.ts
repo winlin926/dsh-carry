@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 import type { RTCDataChannel, RTCPeerConnection } from 'werift'
-import { DirectBridge, type DirectStats } from './bridge.js'
+import { DirectBridge, DIRECT_SEND_QUEUE_LIMIT, type DirectStats } from './bridge.js'
 import { DIRECT_PROTOCOL, DIRECT_SIGNAL_TTL_MS, readControl, controlPayload, decodeDirectFrame, encodeDirectFrame } from './protocol.js'
 
 /** What the panel and the acceptance tests read back about one live direct line. */
@@ -107,8 +107,13 @@ export class DirectHost {
     session.channel = channel
     const bridge = new DirectBridge({ port: this.options.port, mark: () => session.mark, log: this.options.log })
     const handle = bridge.attach({
+      get bufferedAmount() { return channel.bufferedAmount },
+      onBufferedAmountLow: (threshold, listener) => {
+        channel.bufferedAmountLowThreshold = threshold
+        return channel.bufferedAmountLow.subscribe(listener).unSubscribe
+      },
       send: (data: Uint8Array) => {
-        if (channel.bufferedAmount > 16 * 1024 * 1024) { this.drop(session.sessionId, 'send-queue-full'); return }
+        if (channel.bufferedAmount + data.byteLength > DIRECT_SEND_QUEUE_LIMIT) { this.drop(session.sessionId, 'send-queue-full'); return }
         try { channel.send(data) } catch { this.drop(session.sessionId, 'send-failed') }
       },
       close: () => { try { channel.close() } catch { /* already gone */ } },

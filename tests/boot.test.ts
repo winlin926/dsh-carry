@@ -1,4 +1,5 @@
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
+import { remoteDirect } from '../src/boot-direct.js'
 import { BOOT_PATH, bootScript, injectBoot, type BootContext } from '../src/boot.js'
 import { localFilePath } from '../src/local-file.js'
 
@@ -114,7 +115,7 @@ function hostFacade() {
 function bootPage(
   crypto: Record<string, unknown> = { getRandomValues: (array: Uint8Array) => array },
   transport: Record<string, unknown> = {},
-  session: { context?: BootContext; search?: string; href?: string; boot?: unknown; loader?: unknown; store?: unknown; deferPaint?: boolean } = {},
+  session: { context?: BootContext; search?: string; href?: string; boot?: unknown; loader?: unknown; store?: unknown; deferPaint?: boolean; reducedMotion?: boolean; link?: object } = {},
 ) {
   StandInSocket.all = []
   const requests: Array<{ url: string; body?: string; method?: string }> = []
@@ -132,6 +133,7 @@ function bootPage(
     addEventListener: (type: string, listener: (event: unknown) => void) => { listeners.set(type, [...listeners.get(type) ?? [], listener]) },
     dispatchEvent: (event: Event) => { fire(event.type, event); return true }, WebSocket: StandInSocket, EventSource: NativeEventSource, __DSH_TRANSPORT__: transport,
     __DSH_BOOT__: session.boot, __ModuleLoader__: session.loader, localStorage: session.store,
+    matchMedia: (query: string) => ({ matches: query === '(prefers-reduced-motion: reduce)' && !!session.reducedMotion }),
     requestAnimationFrame: (run: () => void) => { if (session.deferPaint) frames.push(run); else run() },
     history: { replaceState: (_state: unknown, _title: string, url: string) => { historyReplacements.push(url) } },
   }
@@ -142,18 +144,20 @@ function bootPage(
     return node
   }
   const root = createElement('div'); root.id = 'root'
-  const document = { documentElement: createElement('html'), head: createElement('head'), addEventListener: () => {}, getElementById: (id: string) => elements.find(node => node.id === id && node.parentElement) ?? null, createElement, body: createElement('body') }
+  const network = new EventTarget()
+  const document = { documentElement: createElement('html'), head: createElement('head'), hidden: false, addEventListener: window.addEventListener, getElementById: (id: string) => elements.find(node => node.id === id && node.parentElement) ?? null, createElement, body: createElement('body') }
   document.documentElement.append(document.head, document.body)
   document.body.append(root)
   let mutation: (() => void) | undefined
   const MutationObserver = class { constructor(listener: () => void) { mutation = listener } observe() {} disconnect() { mutation = undefined } }
   let reloads = 0
   const location = { href: session.href ?? 'https://rc.example/app?token=page-secret#credential', search: session.search ?? '?token=page-secret', origin: 'https://rc.example', protocol: 'https:', assign: () => {}, reload: () => { reloads++ }, replace: (href: string) => { replacements.push(href) } }
-  new Function('window', 'document', 'location', 'crypto', 'setTimeout', 'clearTimeout', 'MutationObserver', 'navigator', 'innerWidth', 'innerHeight', 'devicePixelRatio', 'performance', bootScript(session.context))(
+  const script = bootScript(session.context)
+  new Function('window', 'document', 'location', 'crypto', 'setTimeout', 'clearTimeout', 'MutationObserver', 'navigator', 'innerWidth', 'innerHeight', 'devicePixelRatio', 'performance', 'testLink', session.link ? script.replace(remoteDirect.toString(), '(() => testLink)') : script)(
     window, document, location, crypto,
     (run: () => void, delay: number) => { timers.push({ delay, due: clock.now + delay, run, cancelled: false }); return timers.length },
     (id: number) => { if (timers[id - 1]) timers[id - 1]!.cancelled = true },
-    MutationObserver, { userAgent: 'test browser' }, 390, 844, 1, { now: () => clock.now },
+    MutationObserver, { userAgent: 'test browser', connection: network }, 390, 844, 1, { now: () => clock.now }, session.link,
   )
   /** Run every timer that is due, in order, including the ones a run schedules. */
   const advance = (ms: number): void => {
@@ -174,7 +178,7 @@ function bootPage(
   }
   const stored = session.store as { getItem?: (key: string) => string | null; setItem?: (key: string, value: string) => void } | undefined
   return {
-    window, NativeEventSource, requests, timers, sockets: StandInSocket.all, document, root, createElement, mountBoot, advance, clock,
+    window, NativeEventSource, requests, timers, sockets: StandInSocket.all, document, network, root, createElement, mountBoot, advance, clock,
     mutate: () => { mutation?.() }, frame: () => frames.splice(0).forEach(run => run()), reloads: () => reloads, replacements, historyReplacements,
     store: stored,
     fire,
@@ -365,6 +369,36 @@ it('compares the manifest revision and stores a baseline only after the Host too
   expect(lines(denied).stage).toBe('已读取本次插件清单')
 })
 
+it.each([
+  ['returning', 'r2', false], ['updated plugins', 'r1', false], ['reduced motion', null, true],
+] as const)('removes the startup screen as soon as the workspace mounts: %s', (_name, previous, reducedMotion) => {
+  const values = new Map(previous ? [['dsh-rc-boot-graph', previous]] : [])
+  const f = bootPage(undefined, {}, { boot: bootGraph('r2', ['one']), store: storage(values), reducedMotion, deferPaint: true })
+  f.mountBoot()
+  expect(screenOf(f)).toBeDefined()
+  f.root.replaceChildren(f.createElement('main')); f.mutate()
+  expect(screenOf(f)).toBeUndefined()
+  f.frame(); f.frame(); f.advance(3000)
+  expect(screenOf(f)).toBeUndefined()
+  expect(values.get('dsh-rc-boot-graph')).toBe('r2')
+  expect(f.report()).toMatchObject({ result: 'ready', mounted: true })
+})
+
+it('keeps the first-visit completion when storage is blocked and the Host error on a failed revisit', () => {
+  const boot = bootGraph('new', ['one'])
+  const denied = bootPage(undefined, {}, { boot, store: { getItem() { throw new Error('denied') } } })
+  denied.mountBoot(); denied.root.replaceChildren(denied.createElement('main')); denied.mutate()
+  denied.advance(320)
+  expect(lines(denied).stage).toBe('✓ 启动完成')
+  const values = new Map([['dsh-rc-boot-graph', 'old']])
+  const revisit = bootPage(undefined, {}, { boot, reducedMotion: true, store: storage(values) })
+  const { card } = revisit.mountBoot()
+  card.textContent = 'Failed to load plugins'; revisit.mutate()
+  expect(revisit.root.querySelector('[data-dsh-rc-boot-status]')?.textContent).toContain('重新加载')
+  expect(revisit.report()).toMatchObject({ phase: 'failed' })
+  expect(values.get('dsh-rc-boot-graph')).toBe('old')
+})
+
 it('names the graph size and no denominator when the loader interface does not match', () => {
   const graph = bootGraph('r1', ['one', 'two'])
   const f = bootPage(undefined, {}, { boot: graph, loader: { mode: 'live', load() {}, create() { throw new Error('late') } } })
@@ -471,6 +505,36 @@ it('delegates an existing transport and preserves its rejection without adding s
   expect(calls).toEqual(['/plugins/one.js?rev=x'])
   await expect(pending).rejects.toBe(failure)
   expect(f.document.head.children.filter(node => node.tagName === 'SCRIPT')).toHaveLength(0)
+})
+
+it('never replays a write after the selected line loses its response', async () => {
+  const link = { ready: true, line: 'upstream', fetch: vi.fn().mockRejectedValue(new Error('lost direct response')), preferDirectForWrite: vi.fn(async () => false), invalidateUpstream: vi.fn() }
+  const f = bootPage(undefined, {}, { context: { direct: { signal: '/rc/direct/signal', preference: 'public' } }, link })
+  const write = () => f.window.__DSH_FILE_UPLOAD__.fetch('/api/write', { method: 'POST', body: 'once' })
+  const first = write(); await settle(); f.rejectRequest()
+  await expect(first).rejects.toThrow('Network unavailable')
+  expect(link.invalidateUpstream).toHaveBeenCalledTimes(1)
+  expect(link.fetch).not.toHaveBeenCalled()
+  const second = write(); await settle(); f.answerWith(503, '{}')
+  expect((await second).status).toBe(503)
+  expect(link.fetch).not.toHaveBeenCalled()
+  link.preferDirectForWrite.mockResolvedValue(true)
+  await expect(write()).rejects.toThrow('lost direct response')
+  expect(link.fetch).toHaveBeenCalledTimes(1)
+  expect(f.requests.map(row => row.method)).toEqual(['POST', 'POST'])
+})
+
+it('invalidates the entry sample on network changes and when the phone returns to the foreground', () => {
+  const link = { invalidateUpstream: vi.fn(), checkLines: vi.fn() }
+  const f = bootPage(undefined, {}, { context: { direct: { signal: '/rc/direct/signal', preference: 'public' } }, link })
+  f.document.hidden = true; f.fire('visibilitychange', new Event('visibilitychange'))
+  expect(link.invalidateUpstream).not.toHaveBeenCalled()
+  f.fire('offline', new Event('offline'))
+  expect(link.checkLines).not.toHaveBeenCalled()
+  f.document.hidden = false; f.fire('visibilitychange', new Event('visibilitychange'))
+  f.network.dispatchEvent(new Event('change')); f.fire('online', new Event('online'))
+  expect(link.invalidateUpstream).toHaveBeenCalledTimes(4)
+  expect(link.checkLines).toHaveBeenCalledTimes(3)
 })
 
 it('shows the reconnect status when a connected socket closes and its status check fails', async () => {

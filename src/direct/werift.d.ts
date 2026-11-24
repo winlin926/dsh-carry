@@ -7,6 +7,8 @@ declare module 'werift' {
     label: string
     readyState: string
     bufferedAmount: number
+    bufferedAmountLowThreshold: number
+    bufferedAmountLow: { subscribe(fn: () => void): { unSubscribe: () => void } }
     send(data: Uint8Array): void
     close(): void
     onMessage: { subscribe(fn: (message: unknown) => void): void }

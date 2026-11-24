@@ -750,6 +750,16 @@ function PairingPrompt({ waiting, onDone }: { waiting: Waiting; onDone: () => vo
         h('button', { type: 'button', className: 'dsrc-button dsrc-primary', disabled: working, autoFocus: true, onClick: () => { void answer('approve') } }, '允许连接')]),
     ]) : null)
 }
+/** Pairing approvals belong to the Host page; both gateway routes set the remote marker before mounting. */
+export function watchLocalPairings(check: () => void): (() => void) | undefined {
+  if ((globalThis as { __DSH_REMOTE_CONTROL__?: boolean }).__DSH_REMOTE_CONTROL__ === true) return
+  const poll = () => { if (!document.hidden) check() }
+  poll()
+  const timer = setInterval(poll, 2500)
+  document.addEventListener('visibilitychange', poll)
+  return () => { clearInterval(timer); document.removeEventListener('visibilitychange', poll) }
+}
+
 function SidebarEntry({ manager }: PanelProps): React.ReactElement {
   const [open, setOpen] = React.useState(false), dialog = React.useRef<HTMLDialogElement>(null)
   const [waiting, setWaiting] = React.useState<Waiting>({ enabled: false, node: { name: '', fingerprint: '', fingerprintGroups: '' }, requests: [] })
@@ -783,13 +793,7 @@ function SidebarEntry({ manager }: PanelProps): React.ReactElement {
     } catch { /* the Host is restarting: ask again on the next tick */ }
     finally { checking.current = false }
   }, [])
-  React.useEffect(() => {
-    void check()
-    const timer = setInterval(() => { void check() }, 2500)
-    const wake = () => { if (!document.hidden) void check() }
-    document.addEventListener('visibilitychange', wake)
-    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', wake) }
-  }, [check])
+  React.useEffect(() => watchLocalPairings(check), [check])
   const pending = waiting.requests.length > 0
   const button = h('button', { type: 'button', className: 'dsrc-entry', title: pending ? '远程控制 · 有配对请求' : '远程控制', 'aria-label': '远程控制', onClick: () => setOpen(true) }, icon(), pending ? h('span', { className: 'dsrc-entry-dot' }) : null)
   return h(React.Fragment, null,
