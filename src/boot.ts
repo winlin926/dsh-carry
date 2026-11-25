@@ -668,10 +668,13 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     }
   })
 
-  /** The gateway's own refusal. A 403 from the Host (a path it will not read, say) is an ordinary error. */
-  async function unpaired(response: Response): Promise<boolean> {
-    if (response.status !== 403 || !response.headers.get('content-type')?.includes('application/json')) return false
-    try { return (await response.clone().json())?.code === 'unpaired' } catch { return false }
+  async function unpaired(response: Response, fromManagement = false): Promise<boolean> {
+    const relayRefusal = fromManagement && response.status === 401
+    if ((!relayRefusal && response.status !== 403) || !response.headers.get('content-type')?.includes('application/json')) return false
+    try {
+      const data = await response.clone().json()
+      return relayRefusal ? data?.error?.code === 'AUTH_REQUIRED' : data?.code === 'unpaired'
+    } catch { return false }
   }
   window.fetch = async (...args) => {
     const response = await routedFetch(args[0], args[1])
@@ -679,20 +682,20 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     return response
   }
   const OriginalSocket = window.WebSocket
-  /** One authorization check per outage, only when a Host session socket was previously open. */
+  // Failed reconnects can reveal a revoked session after the initial network failure.
+  let hadMux = false
   let probing: Promise<unknown> | undefined
   const probeAuthorization = (): void => {
     if (probing || runtime.api.getSnapshot().phase === 'blocked') return
     probing = originalFetch('/api/dsh-remote-connect/manage', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'status' }) }).then(async response => {
-      if (await unpaired(response)) revoke()
+      if (await unpaired(response, true)) revoke()
       else if ([502, 503, 504].includes(response.status)) runtime.report('host-unavailable')
     }).catch(() => window.dispatchEvent(new Event('dsh-rc-offline'))).finally(() => { probing = undefined })
   }
   const watchMux = (socket: Pick<WebSocket, 'addEventListener'>, route: 'lan' | 'public' | 'direct' | undefined) => {
     runtime.observeMux(socket, route)
-    let opened = false
-    socket.addEventListener('open', () => { opened = true })
-    socket.addEventListener('close', () => { if (opened) probeAuthorization() })
+    socket.addEventListener('open', () => { hadMux = true })
+    socket.addEventListener('close', () => { if (hadMux) probeAuthorization() })
   }
   // Sockets that opened before the direct line was usable: when it becomes usable they are closed
   // so the app's own reconnect logic opens them again on the direct channel. Without this the

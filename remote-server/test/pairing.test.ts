@@ -223,10 +223,13 @@ test('expired tickets and expired pairing requests are rejected', async () => {
     const freshTicket = service.createTicket(hostRow, {})
     const claim = service.claim({ ticket: freshTicket.ticket, client })
     now += 6 * 60_000
-    assert.throws(
+    for (const check of [
+      () => service.poll(claim.requestId, claim.pairingToken, node.baseUrl),
       () => service.clientConfirm(claim.requestId, claim.pairingToken, node.baseUrl),
-      (error: unknown) => error instanceof ApiError && error.status === 410 && error.code === 'PAIRING_EXPIRED',
-    )
+      () => service.clientReject(claim.requestId, claim.pairingToken),
+    ]) {
+      assert.throws(check, (error: unknown) => error instanceof ApiError && error.status === 410 && error.code === 'PAIRING_EXPIRED')
+    }
   } finally {
     await node.stop()
   }
@@ -369,7 +372,7 @@ test('the pairing page never renders the eight-digit comparison code', async () 
   assert.match(html, /fromB64url/u)
 })
 
-test('the relay page accepts a real QR key and checks an interrupted decision without replaying it', async () => {
+test('the relay page retries the config read and follows server pairing status even with a skewed clock', async () => {
   const html = await readFile(new URL('../web/index.html', import.meta.url), 'utf8')
   const script = /<script>([\s\S]*?)<\/script>/u.exec(html)?.[1]
   assert.ok(script)
@@ -380,8 +383,8 @@ test('the relay page accepts a real QR key and checks an interrupted decision wi
   const statusPath = '/v1/pairings/test-request'
   const confirmPath = `${statusPath}/confirm`
 
-  for (const outcome of ['complete', 'expired', 'rejected'] as const) {
-    let now = 1_000_000
+  for (const outcome of ['claim-lost', 'complete', 'expired', 'rejected'] as const) {
+    const now = 1_000_000
     const expiresAt = now + 5_000
     let timerId = 0
     const timers = new Set<number>()
@@ -402,24 +405,47 @@ test('the relay page accepts a real QR key and checks an interrupted decision wi
       navigator: { language: 'en-US' },
       history: { replaceState: () => { location.hash = '' } },
       localStorage: { getItem: () => null, setItem: () => {} },
-      Date: class extends Date { static now() { return now } },
+      Date: class extends Date { static now() { return now + (outcome === 'expired' ? -120_000 : 120_000) } },
       setTimeout: () => { timers.add(++timerId); return timerId },
       clearTimeout: (id: number) => timers.delete(id),
       fetch: async (path: string, options: RequestInit) => {
         calls.push(path)
-        if (path === '/v1/config') return Response.json({ name: 'Test relay', kind: 'service' })
+        if (path === '/v1/config') {
+          if (calls.length === 1) throw new TypeError('network interrupted')
+          return Response.json({ name: 'Test relay', kind: 'service' })
+        }
         if (path === claimPath) {
+          assert.equal(location.hash, '')
           assert.equal(JSON.parse(String(options.body)).ticket, ticket)
+          if (outcome === 'claim-lost') throw new TypeError('claim response lost')
           return Response.json({ requestId: 'test-request', pairingToken: randomToken(), host, expiresAt })
         }
         if (path === confirmPath) throw new TypeError('network interrupted')
-        if (path === statusPath) return Response.json({ requestId: 'test-request', state: outcome === 'expired' ? 'pending' : outcome, complete: outcome === 'complete' })
+        if (path === statusPath) {
+          if (outcome === 'expired') return Response.json({ error: { code: 'PAIRING_EXPIRED' } }, { status: 410 })
+          return Response.json({ requestId: 'test-request', state: outcome, complete: outcome === 'complete' })
+        }
         if (path === '/v1/hosts') return Response.json({ hosts: [host] })
         throw new Error(`Unexpected request ${path}`)
       },
     })
     const flush = () => new Promise<void>(resolve => setImmediate(resolve))
+    assert.equal(location.hash, `#v=1&ticket=${ticket}&key=${key}`)
+    assert.deepEqual(calls, ['/v1/config'])
+    assert.equal(get('retry').hidden, false)
+    await get('retry').onclick?.()
     assert.equal(location.hash, '')
+    assert.deepEqual(calls, ['/v1/config', '/v1/config', claimPath])
+    assert.equal(get('retry').hidden, true)
+    if (outcome === 'claim-lost') {
+      assert.match(get('status').textContent, /No pairing result arrived/u)
+      assert.equal(get('retry').onclick, null)
+      window.dispatchEvent(new Event('online'))
+      document.dispatchEvent(new Event('visibilitychange'))
+      await flush()
+      assert.deepEqual(calls, ['/v1/config', '/v1/config', claimPath])
+      continue
+    }
     assert.equal(document.documentElement.lang, 'en')
     assert.equal(get('host-fp').textContent.replace(/-/g, '').toLowerCase(), host.fingerprint)
     assert.equal(get('approve').disabled, false)
@@ -435,14 +461,13 @@ test('the relay page accepts a real QR key and checks an interrupted decision wi
     document.hidden = true
     document.dispatchEvent(new Event('visibilitychange'))
     window.dispatchEvent(new Event('online'))
-    assert.deepEqual(calls, ['/v1/config', claimPath, confirmPath])
+    assert.deepEqual(calls, ['/v1/config', '/v1/config', claimPath, confirmPath])
     assert.equal(timers.size, 0)
 
-    if (outcome === 'expired') now = expiresAt
     document.hidden = false
     document.dispatchEvent(new Event('visibilitychange'))
     await flush()
-    assert.deepEqual(calls, ['/v1/config', claimPath, confirmPath, statusPath, ...(outcome === 'complete' ? ['/v1/hosts'] : [])])
+    assert.deepEqual(calls, ['/v1/config', '/v1/config', claimPath, confirmPath, statusPath, ...(outcome === 'complete' ? ['/v1/hosts'] : [])])
     assert.equal(opened, outcome === 'complete' ? '/' : '')
     assert.equal(get('approve').disabled, true)
     assert.equal(get('retry').hidden, true)

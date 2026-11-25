@@ -388,12 +388,7 @@ export class Gateway {
     const untrack = this.track(device.id, () => { req.destroy(); res.destroy() }); res.once('close', untrack)
     if (decodeURIComponent(url.pathname) === MANAGE_PATH) {
       if (req.method !== 'POST') { json(res, 405, { error: 'POST only' }); return }
-      try {
-        const input = await body(req)
-        const result = await this.options.manage(input, false)
-        const route = this.route(device.id)
-        json(res, 200, input.action === 'status' && result && typeof result === 'object' ? { ...result, currentRoute: route } : result)
-      }
+      try { json(res, 200, await this.options.manage(await body(req), false)) }
       catch (error) { json(res, 400, { error: error instanceof Error ? error.message : '操作失败。' }) }
       return
     }
@@ -457,7 +452,7 @@ export class Gateway {
       try { html = injectBoot(await this.options.index()) }
       catch {
         res.writeHead(502, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' })
-        res.end(unavailablePage(undefined, pageLanguage(req)))
+        res.end(unavailablePage(pageLanguage(req)))
         return
       }
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' }); res.end(html); return

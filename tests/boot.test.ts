@@ -567,11 +567,11 @@ function connectionFor(f: ReturnType<typeof bootPage>) {
 }
 
 it('keeps the current page and the reconnect indicator until the Host handshake succeeds', async () => {
-  const f = bootPage(undefined, {}, { context: { entry: 'public', version: '0.7.0' } })
+  const f = bootPage(undefined, {}, { context: { entry: 'public', version: '0.7.1' } })
   const host = connectionFor(f)
   const connection = host.openMux()
   host.ready()
-  expect(host.runtime.getSnapshot()).toMatchObject({ phase: 'connected', entry: 'public', route: 'public', version: '0.7.0' })
+  expect(host.runtime.getSnapshot()).toMatchObject({ phase: 'connected', entry: 'public', route: 'public', version: '0.7.1' })
   host.lost(); connection.fire('close')
   f.rejectRequest()
   await settle()
@@ -653,7 +653,7 @@ it('hands a cross-origin EventSource to the browser instead of throwing on const
   expect(sockets).toHaveLength(1)
 })
 
-it('probes the authorization once for a socket that opened, never for the SSE carrier', async () => {
+it('deduplicates authorization probes after the first session opens', async () => {
   const { window, requests, answer } = bootPage()
   const open = (path: string) => { const socket = new window.WebSocket(path); socket.fire('open'); return socket }
   open('/rc/sse?path=%2Fapi%2Fsse').fire('close')
@@ -704,6 +704,19 @@ it('asks a revoked device to pair again in a modal without a reload action', asy
   expect(modal.children.find(child => child.tagName === 'BUTTON')).toBeUndefined()
   f.fire('dsh-rc-offline', new Event('dsh-rc-offline'))
   expect(connectionStatus(f)).toBeUndefined()
+})
+
+it('detects an expired relay session after the network returns and the mux fails to reopen', async () => {
+  const f = bootPage()
+  const socket = new f.window.WebSocket('/api/remote.mux'); socket.fire('open'); socket.fire('close')
+  f.rejectRequest()
+  await settle()
+  expect(dialog(f.elements)).toBeUndefined()
+  new f.window.WebSocket('/api/remote.mux').fire('close')
+  expect(f.requests.filter(request => request.url.endsWith('/manage'))).toHaveLength(2)
+  f.answerWith(401, JSON.stringify({ error: { code: 'AUTH_REQUIRED' } }))
+  await settle()
+  expect(dialog(f.elements)?.children.find(child => child.tagName === 'H2')?.textContent).toBe('设备授权已失效')
 })
 
 const HOST_ID = '5QKQY_VIKcY52sBuej3ozcSh4gUAwAYe0YENr18qsfA'

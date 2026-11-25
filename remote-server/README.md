@@ -77,8 +77,8 @@ Host ───HTTPS/WSS──▶                                              �
 | POST | `/v1/pairings` | Host Bearer | `{ticket?,expiresAt?}`（省略则服务端生成 32 字节票据、TTL≤5min）→ `201 {ticket,expiresAt,host:{name,hostId,fingerprint}}`，票据哈希入库、单次使用 |
 | POST | `/v1/pairings/claim` | 无（票据即凭据） | `{ticket,client:{deviceId,name,platform,identityKey}}`（`identityKey` 同样是 base64url(SPKI DER)）→ `201 {requestId,pairingToken,host:{...},verificationCode,expiresAt}`；票据被消费；Host 必须在线，`pair.request` 帧推给 Host。`verificationCode` 仅作 v1 传输兼容字段保留，`/pair` 页面与新授权逻辑不读取、不显示、不参与判定 |
 | POST | `/v1/pairings/:requestId/confirm` | `X-Pairing-Token` | 手机确认；Host 已确认则完成配对并 `Set-Cookie`（`Secure; HttpOnly; SameSite=Strict`）→ `{requestId,state,complete,host,expiresAt}` |
-| GET | `/v1/pairings/:requestId` | `X-Pairing-Token` | 轮询状态；完成且未发过 cookie 时补发 `Set-Cookie` |
-| POST | `/v1/pairings/:requestId/reject` | `X-Pairing-Token` | 手机拒绝（`410 PAIRING_REJECTED` 处理后续操作） |
+| GET | `/v1/pairings/:requestId` | `X-Pairing-Token` | 查询状态。已完成且未签发 cookie 时返回 `Set-Cookie`。仍待决且已过期时返回 `410 PAIRING_EXPIRED` |
+| POST | `/v1/pairings/:requestId/reject` | `X-Pairing-Token` | 手机拒绝。仍待决且已过期时返回 `410 PAIRING_EXPIRED` |
 | GET | `/v1/hosts` | Device cookie | 只列当前 cookie 授权过且未撤销的 Host |
 | DELETE | `/v1/hosts/:hostId/devices/:deviceId` | Device cookie | 撤销关系（仅限本设备），关闭该设备经隧道的活动连接（4004） |
 | DELETE | `/v1/hosts/:hostId` | Host Bearer | Host 注销自己的注册：级联删除该 Host 的设备授权、设备会话、配对票据/请求与静态资源，再删除 hosts 行，返回 `204`；`hostId` 不存在返回 `404 HOST_NOT_FOUND`，凭据与路径不一致返回 `403` |

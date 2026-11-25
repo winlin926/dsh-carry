@@ -187,6 +187,7 @@ export class PairingService {
   /** Phone-side rejection. */
   clientReject(requestId: string, pairingToken: string): PairingStatus {
     const request = this.requireRequestForClient(requestId, pairingToken)
+    this.assertNotExpired(request, this.clock())
     if (request.state !== 'complete') this.repos.setPairingRejected(requestId)
     return this.status(requestId)
   }
@@ -225,7 +226,9 @@ export class PairingService {
     cookie: IssuedCookie | null
   } {
     const request = this.requireRequestForClient(requestId, pairingToken)
-    return this.statusWithCookie(request.request_id, origin, this.clock())
+    const now = this.clock()
+    this.assertNotExpired(request, now)
+    return this.statusWithCookie(request.request_id, origin, now)
   }
 
   private statusWithCookie(
@@ -295,7 +298,11 @@ export class PairingService {
 
   private assertOpen(request: PairingRequestRow, now: number): void {
     if (request.state === 'rejected') throw ApiError.gone('PAIRING_REJECTED', 'The pairing request was rejected.')
-    if (request.expires_at <= now && request.state !== 'complete') {
+    this.assertNotExpired(request, now)
+  }
+
+  private assertNotExpired(request: PairingRequestRow, now: number): void {
+    if (request.expires_at <= now && request.state !== 'complete' && request.state !== 'rejected') {
       throw ApiError.gone('PAIRING_EXPIRED', 'The pairing request has expired.')
     }
   }

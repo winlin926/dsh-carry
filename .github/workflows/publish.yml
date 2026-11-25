@@ -34,7 +34,7 @@ jobs:
       - run: pnpm test && npm --prefix remote-server test && pnpm build
       - name: Validate tag and package
         run: |
-          node --input-type=module -e "import p from './package.json' with {type:'json'}; if(process.env.GITHUB_REF_TYPE==='tag' && process.env.GITHUB_REF_NAME!=='v'+p.version) throw Error('Tag must match package version')"
+          node --input-type=module -e "import p from './package.json' with {type:'json'}; if(process.env.GITHUB_REF_TYPE!=='tag' || process.env.GITHUB_REF_NAME!=='v'+p.version) throw Error('Release requires the matching version tag')"
           npm pack --ignore-scripts --json > package-manifest.json
           node scripts/check-package.mjs package-manifest.json
           TARBALL=$(node -p 'require("./package-manifest.json")[0].filename')
@@ -51,8 +51,11 @@ jobs:
             npm publish "$TARBALL" --access public --provenance
           fi
       - name: Create GitHub Release
+        if: ${{ github.event_name == 'push' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TARBALL=$(node -p 'require("./package-manifest.json")[0].filename')
-          gh release create "$GITHUB_REF_NAME" "$TARBALL" --verify-tag --title "$GITHUB_REF_NAME" --notes-file docs/release-notes.md
+          TITLE=$(sed -n '1s/^# //p' docs/release-notes.md)
+          NOTES=$(tail -n +3 docs/release-notes.md)
+          gh release create "$GITHUB_REF_NAME" "$TARBALL" --verify-tag --title "${TITLE:-$GITHUB_REF_NAME}" --notes "$NOTES"

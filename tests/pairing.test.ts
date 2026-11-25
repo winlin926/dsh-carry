@@ -132,7 +132,7 @@ it('records the pairing address and renames authorized devices', () => {
   expect(service.authenticate(lan)?.name).toBe('我的手机')
 })
 
-function openPairing(page: string, fetch: (path: string, input: { body: string }) => Promise<Response>, hash = '#pair=scan-token') {
+function openPairing(page: string, fetch: (path: string, input: { body: string }) => Promise<Response>, hash = '#pair=scan-token', phoneTime = Date.now()) {
   const element = () => ({ textContent: '', hidden: true, disabled: true, lang: '', onclick: undefined as (() => Promise<void> | void) | undefined });
   const elements = { confirm: element(), state: element(), error: element(), progress: element(), enter: element(), language: element(), 'target-fingerprint': element() };
   if (!page.includes('id="confirm"')) Object.assign(elements, { confirm: null, 'target-fingerprint': null });
@@ -145,13 +145,12 @@ function openPairing(page: string, fetch: (path: string, input: { body: string }
   };
   const stored = new Map<string, string>();
   const location = { hash, replaced: '', replace(path: string) { this.replaced = path } };
-  const clock = { now: Date.now() };
   const timers = new Map<number, () => void>();
   let sequence = 0;
   const ready = runInNewContext(page.match(/<script>([\s\S]*?)<\/script>/)![1]!, {
     document, location, history: { replaceState: () => { location.hash = '' } },
     localStorage: { getItem: (key: string) => stored.get(key), setItem: (key: string, value: string) => stored.set(key, value) },
-    URLSearchParams, atob, crypto: webcrypto, navigator: {}, AbortSignal, Date: { now: () => clock.now }, fetch,
+    URLSearchParams, atob, crypto: webcrypto, navigator: {}, AbortSignal, Date: { now: () => phoneTime }, fetch,
     setTimeout: (callback: () => void) => { timers.set(++sequence, callback); return sequence },
     clearTimeout: (id: number) => { timers.delete(id) },
   }) as Promise<void>;
@@ -159,7 +158,7 @@ function openPairing(page: string, fetch: (path: string, input: { body: string }
     document.hidden = hidden;
     visibility.get('visibilitychange')?.();
   }
-  return { elements, document, location, stored, clock, timers, ready, setHidden };
+  return { elements, document, location, stored, timers, ready, setHidden };
 }
 
 const unpaired = () => Response.json({ code: 'unpaired' }, { status: 403 });
@@ -268,24 +267,24 @@ it('pauses while hidden and resumes the same claim once, keeping the language ch
   await expect.poll(() => view.location.replaced).toBe('/')
 })
 
-it('stops checking a claim that expired in the background', async () => {
+it.each([-120_000, 120_000])('uses the gateway expiry decision with a phone clock offset of %i ms', async offset => {
   let polls = 0
-  const expiry = Date.now() + 300000
+  const now = Date.now()
   const view = openPairing(pairingPage(undefined, 'en'), async path => {
     if (path.endsWith('/manage')) return unpaired()
-    if (path.endsWith('/request')) return Response.json({ id: 'pending', key: 'claim-key', expiresAt: expiry })
+    if (path.endsWith('/request')) return Response.json({ id: 'pending', key: 'claim-key', expiresAt: now + 60_000 })
     polls++
-    return Response.json({ state: 'pending' })
-  })
+    return polls === 1 ? Response.json({ state: 'pending' }) : Response.json({ code: 'claim_invalid' }, { status: 400 })
+  }, undefined, now + offset)
   await view.ready
+  expect(polls).toBe(1)
+  expect(view.timers.size).toBe(1)
   view.setHidden(true)
-  view.clock.now = expiry
   view.setHidden(false)
-  await view.elements.enter.onclick!()
-  expect(view.elements.state.textContent).toContain('pairing request is no longer valid')
+  await expect.poll(() => view.elements.state.textContent).toContain('pairing request is no longer valid')
   expect(view.elements.enter.hidden).toBe(true)
   expect(view.timers.size).toBe(0)
-  expect(polls).toBe(1)
+  expect(polls).toBe(2)
 })
 
 it('reopens an already authorized device without submitting another pairing', async () => {

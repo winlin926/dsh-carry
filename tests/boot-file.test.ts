@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest'
 import { openRemoteFile } from '../src/boot-file.js'
 
-class Element {
+class Element extends EventTarget {
   children: Element[] = []
   parent?: Element
   readonly style: Record<string, string> = {}
@@ -11,8 +11,7 @@ class Element {
   onclick?: () => void
   href?: string
   download?: string
-  constructor(readonly tag: string) {}
-  get childElementCount() { return this.children.length }
+  constructor(readonly tag: string) { super() }
   setAttribute(name: string, value: string) { this.attrs.set(name, value) }
   append(...nodes: Element[]) { for (const node of nodes) { node.parent = this; this.children.push(node) } }
   prepend(node: Element) { node.parent = this; this.children.unshift(node) }
@@ -141,4 +140,22 @@ it('rejects a response over 48 MiB even without Content-Length', async () => {
   expect(f.urls.createObjectURL).not.toHaveBeenCalled()
   f.window.dispatchEvent(new Event('pagehide'))
   expect(f.statuses()).toHaveLength(0)
+})
+
+it('releases the previous inline preview whether it finished or is still downloading', async () => {
+  const f = fixture(true)
+  await f.run(address, async () => new Response('first file'), 'en')
+
+  const cancel = vi.fn()
+  const pending = new Response(new ReadableStream({ cancel }))
+  const download = f.run(address, async () => pending, 'en')
+  await expect.poll(() => pending.body?.locked).toBe(true)
+  expect(f.urls.revokeObjectURL).toHaveBeenCalledExactlyOnceWith(f.url)
+  expect(f.statuses()).toHaveLength(1)
+
+  await f.run(address, async () => new Response('latest file'), 'en')
+  await download
+  expect(cancel).toHaveBeenCalledOnce()
+  expect(pending.body?.locked).toBe(false)
+  expect(f.statuses().map(status => status.textContent)).toEqual(['File ready.'])
 })

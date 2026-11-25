@@ -160,11 +160,10 @@ export function pairingPage(node?: PairingNode, language: PageLanguage = 'zh'): 
         const data = await response.json().catch(() => null);
         if (!response.ok) return refused(data, true);
         if (!data || typeof data.id !== 'string' || !data.id || typeof data.key !== 'string' || !data.key || !Number.isFinite(data.expiresAt)) return finish('unknown');
-        claim = { id: data.id, key: data.key, expiresAt: data.expiresAt };
+        claim = { id: data.id, key: data.key };
         token = null;
         submitting = false;
       }
-      if (claim.expiresAt <= Date.now()) return finish('expired');
       show('pending');
       if (document.hidden) return;
       const response = await post('/rc/pair/claim', { id: claim.id, key: claim.key });
@@ -180,11 +179,7 @@ export function pairingPage(node?: PairingNode, language: PageLanguage = 'zh'): 
       else show('network', true);
     } finally {
       running = false;
-      if (claim && !document.hidden) {
-        const left = claim.expiresAt - Date.now();
-        if (left <= 0) finish('expired');
-        else timer = waiting ? setTimeout(check, Math.min(1500, left)) : setTimeout(() => finish('expired'), left);
-      }
+      if (waiting && !document.hidden) timer = setTimeout(check, 1500);
     }
   }
   enter.onclick = check;
@@ -232,9 +227,9 @@ export function deniedPage(reason?: string, language: PageLanguage = 'zh'): stri
 const escapeHTML = (value: string): string => value.replace(/[&<>"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[character]!)
 
 /** The gateway is up but the Host behind it did not hand over its page. */
-export function unavailablePage(detail?: string, language: PageLanguage = 'zh'): string {
+export function unavailablePage(language: PageLanguage): string {
   const en = language === 'en';
   const title = en ? 'Your computer is not responding' : '电脑暂时没有响应';
   const message = en ? 'The remote connection is reachable, but DeepSeek Harness did not return a page. Make sure it is running on your computer, then try again.' : '远程连接是通的，但电脑上的 DeepSeek Harness 没有返回界面。请确认电脑仍在运行、会话没有退出，然后重试。';
-  return head(title, language) + `<body><main class="card"><span class="eyebrow">${pairingCopy[language].eyebrow}</span><h1>${title}</h1><p>${message}</p>${detail ? `<small>${en ? 'Details: ' : '原因：'}<code>${escapeHTML(detail)}</code></small>` : ''}<button type="button" onclick="location.reload()">${en ? 'Try again' : '重试'}</button></main></body></html>`;
+  return head(title, language) + `<body><main class="card"><span class="eyebrow">${pairingCopy[language].eyebrow}</span><h1>${title}</h1><p>${message}</p><button type="button" onclick="location.reload()">${en ? 'Try again' : '重试'}</button></main></body></html>`;
 }

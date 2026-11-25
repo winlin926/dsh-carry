@@ -41,7 +41,6 @@ export async function openRemoteFile(address: string, fetchFile: typeof fetch, l
   actions.append(dismiss)
   panel.append(title, status, progress, actions)
 
-  let stack: HTMLElement | null = null
   if (popup) {
     view.title = name
     view.documentElement.lang = en ? 'en' : 'zh-CN'
@@ -51,16 +50,10 @@ export async function openRemoteFile(address: string, fetchFile: typeof fetch, l
     viewport.content = 'width=device-width, initial-scale=1'
     view.head.append(viewport)
     panel.style.cssText += ';max-width:480px;margin:24px auto'
-    container.append(panel)
   } else {
-    stack = view.getElementById('dsh-rc-file-previews')
-    if (!stack) {
-      stack = view.createElement('div')
-      stack.id = 'dsh-rc-file-previews'
-      stack.style.cssText = 'position:fixed;z-index:2147483646;inset-inline-end:12px;bottom:max(12px,env(safe-area-inset-bottom));width:min(360px,calc(100vw - 24px));max-height:50vh;overflow:auto;display:grid;gap:8px'
-      container.append(stack)
-    }
-    stack.append(panel)
+    panel.id = 'dsh-rc-file-preview'
+    view.getElementById(panel.id)?.dispatchEvent(new Event('dsh-rc-preview-replaced'))
+    panel.style.cssText += ';position:fixed;z-index:2147483646;inset-inline-end:12px;bottom:max(12px,env(safe-area-inset-bottom));box-sizing:border-box;width:min(360px,calc(100vw - 24px));max-height:50vh;overflow:auto'
   }
 
   const transfer = new AbortController()
@@ -81,13 +74,14 @@ export async function openRemoteFile(address: string, fetchFile: typeof fetch, l
     popup?.removeEventListener('pagehide', dispose)
     if (objectUrl) URL.revokeObjectURL(objectUrl)
     panel.remove()
-    if (stack && !stack.childElementCount) stack.remove()
     popup?.close()
   }
   const checkClosed = popup ? setInterval(() => { if (popup.closed) dispose() }, 500) : undefined
   window.addEventListener('pagehide', dispose)
   popup?.addEventListener('pagehide', dispose)
+  if (!popup) panel.addEventListener('dsh-rc-preview-replaced', dispose, { once: true })
   dismiss.onclick = dispose
+  container.append(panel)
 
   try {
     const response = await fetchFile(address, { cache: 'no-store', redirect: 'error', signal: transfer.signal })
