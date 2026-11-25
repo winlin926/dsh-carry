@@ -2,6 +2,7 @@ import { expect, it, vi } from 'vitest'
 import { remoteDirect } from '../src/boot-direct.js'
 import { BOOT_PATH, bootScript, injectBoot, type BootContext } from '../src/boot.js'
 import { localFilePath } from '../src/local-file.js'
+import type { ConnectionFace, RemoteRuntime } from '../src/remote-runtime.js'
 
 const page = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>DeepSeek Harness</title></head><body><div id="root"></div></body></html>'
 
@@ -115,10 +116,10 @@ function hostFacade() {
 function bootPage(
   crypto: Record<string, unknown> = { getRandomValues: (array: Uint8Array) => array },
   transport: Record<string, unknown> = {},
-  session: { context?: BootContext; search?: string; href?: string; boot?: unknown; loader?: unknown; store?: unknown; deferPaint?: boolean; reducedMotion?: boolean; link?: object } = {},
+  session: { context?: BootContext; search?: string; href?: string; boot?: unknown; loader?: unknown; store?: unknown; deferPaint?: boolean; reducedMotion?: boolean; link?: object; language?: string } = {},
 ) {
   StandInSocket.all = []
-  const requests: Array<{ url: string; body?: string; method?: string }> = []
+  const requests: Array<{ url: string; body?: string; method?: string; signal?: AbortSignal | null }> = []
   const waiting: Array<{ resolve: (response: Response) => void; reject: (error: Error) => void }> = []
   const clock = { now: 0 }
   const frames: Array<() => void> = []
@@ -129,7 +130,7 @@ function bootPage(
   const historyReplacements: string[] = []
   const NativeEventSource = class { constructor(readonly url: string, readonly init?: EventSourceInit) {} }
   const window: Record<string, any> = {
-    fetch: (input: unknown, init?: { body?: string; method?: string }) => { requests.push({ url: String(input), body: init?.body, method: init?.method }); return new Promise<Response>((resolve, reject) => waiting.push({ resolve, reject })) },
+    fetch: (input: unknown, init?: { body?: string; method?: string; signal?: AbortSignal | null }) => { requests.push({ url: String(input), body: init?.body, method: init?.method, signal: init?.signal }); return new Promise<Response>((resolve, reject) => waiting.push({ resolve, reject })) },
     addEventListener: (type: string, listener: (event: unknown) => void) => { listeners.set(type, [...listeners.get(type) ?? [], listener]) },
     dispatchEvent: (event: Event) => { fire(event.type, event); return true }, WebSocket: StandInSocket, EventSource: NativeEventSource, __DSH_TRANSPORT__: transport,
     __DSH_BOOT__: session.boot, __ModuleLoader__: session.loader, localStorage: session.store,
@@ -151,13 +152,14 @@ function bootPage(
   let mutation: (() => void) | undefined
   const MutationObserver = class { constructor(listener: () => void) { mutation = listener } observe() {} disconnect() { mutation = undefined } }
   let reloads = 0
-  const location = { href: session.href ?? 'https://rc.example/app?token=page-secret#credential', search: session.search ?? '?token=page-secret', origin: 'https://rc.example', protocol: 'https:', assign: () => {}, reload: () => { reloads++ }, replace: (href: string) => { replacements.push(href) } }
+  const location = { href: session.href ?? 'https://rc.example/app?token=page-secret#credential', search: session.search ?? '?token=page-secret', origin: 'https://rc.example', host: 'rc.example', protocol: 'https:', assign: () => {}, reload: () => { reloads++ }, replace: (href: string) => { replacements.push(href) } }
+  const browser = { userAgent: 'test browser', connection: network, language: session.language, onLine: true }
   const script = bootScript(session.context)
   new Function('window', 'document', 'location', 'crypto', 'setTimeout', 'clearTimeout', 'MutationObserver', 'navigator', 'innerWidth', 'innerHeight', 'devicePixelRatio', 'performance', 'testLink', session.link ? script.replace(remoteDirect.toString(), '(() => testLink)') : script)(
     window, document, location, crypto,
     (run: () => void, delay: number) => { timers.push({ delay, due: clock.now + delay, run, cancelled: false }); return timers.length },
     (id: number) => { if (timers[id - 1]) timers[id - 1]!.cancelled = true },
-    MutationObserver, { userAgent: 'test browser', connection: network }, 390, 844, 1, { now: () => clock.now }, session.link,
+    MutationObserver, browser, 390, 844, 1, { now: () => clock.now }, session.link,
   )
   /** Run every timer that is due, in order, including the ones a run schedules. */
   const advance = (ms: number): void => {
@@ -178,7 +180,7 @@ function bootPage(
   }
   const stored = session.store as { getItem?: (key: string) => string | null; setItem?: (key: string, value: string) => void } | undefined
   return {
-    window, NativeEventSource, requests, timers, sockets: StandInSocket.all, document, network, root, createElement, mountBoot, advance, clock,
+    window, NativeEventSource, requests, timers, sockets: StandInSocket.all, document, browser, network, root, createElement, mountBoot, advance, clock,
     mutate: () => { mutation?.() }, frame: () => frames.splice(0).forEach(run => run()), reloads: () => reloads, replacements, historyReplacements,
     store: stored,
     fire,
@@ -537,24 +539,83 @@ it('invalidates the entry sample on network changes and when the phone returns t
   expect(link.checkLines).toHaveBeenCalledTimes(3)
 })
 
-it('shows the reconnect status when a connected socket closes and its status check fails', async () => {
-  const f = bootPage()
-  const connection = new f.window.WebSocket('/api/remote.mux')
-  connection.fire('open')
-  connection.fire('close')
+function connectionFor(f: ReturnType<typeof bootPage>) {
+  let state: ReturnType<ConnectionFace['state']['getSnapshot']> = 'connecting'
+  let generation: object | undefined
+  const stateListeners = new Set<() => void>(), generationListeners = new Set<() => void>()
+  const subscribe = (listeners: Set<() => void>) => (listener: () => void) => {
+    listeners.add(listener)
+    return () => { listeners.delete(listener) }
+  }
+  const runtime = f.window.__DSH_RC_CONNECTION__ as RemoteRuntime
+  const reconnect = vi.fn()
+  runtime.bindConnection({
+    state: { getSnapshot: () => state, subscribe: subscribe(stateListeners) },
+    generation: { getSnapshot: () => generation, subscribe: subscribe(generationListeners) },
+    reconnect,
+  })
+  const setState = (next: typeof state) => { state = next; for (const listener of stateListeners) listener() }
+  const setGeneration = (next: typeof generation) => { generation = next; for (const listener of generationListeners) listener() }
+  const openMux = () => {
+    const socket = new f.window.WebSocket('wss://rc.example/api/remote.mux') as StandInSocket
+    socket.fire('open')
+    return socket
+  }
+  const ready = () => { setState('connected'); setGeneration({}) }
+  const lost = () => { setGeneration(undefined); setState('connecting') }
+  return { runtime, reconnect, openMux, ready, lost, setState, setGeneration }
+}
+
+it('keeps the current page and the reconnect indicator until the Host handshake succeeds', async () => {
+  const f = bootPage(undefined, {}, { context: { entry: 'public', version: '0.7.0' } })
+  const host = connectionFor(f)
+  const connection = host.openMux()
+  host.ready()
+  expect(host.runtime.getSnapshot()).toMatchObject({ phase: 'connected', entry: 'public', route: 'public', version: '0.7.0' })
+  host.lost(); connection.fire('close')
   f.rejectRequest()
-  await new Promise(resolve => setImmediate(resolve))
+  await settle()
   const banner = connectionStatus(f)!
-  expect(banner.children.find(child => child.attributes.role === 'status')?.textContent).toBe('正在重新连接电脑…')
+  expect(announcement(f)).toBe('正在重新连接电脑…')
   const retry = banner.children.find(child => child.tagName === 'BUTTON')!
-  expect(retry.textContent).toBe('正在重新连接…')
   expect(retry.attributes['aria-label']).toBe('正在重新连接，点击重试')
-  f.fire('dsh-rc-offline', new Event('dsh-rc-offline'))
-  expect(f.document.body.children.filter(element => element.id === banner.id)).toEqual([banner])
   retry.onclick!()
-  expect(f.reloads()).toBe(1)
-  new f.window.WebSocket('/api/remote.mux').fire('open')
-  expect(banner.parentElement).toBeNull()
+  expect(host.reconnect).toHaveBeenCalledOnce()
+  expect(f.reloads()).toBe(0)
+  new f.window.WebSocket('wss://other.example/api/remote.mux').fire('open')
+  new f.window.WebSocket('/rc/sse?path=%2Fapi%2Fevents').fire('open')
+  host.openMux()
+  host.setState('connected')
+  expect(host.runtime.getSnapshot().route).toBeUndefined()
+  expect(connectionStatus(f)).toBe(banner)
+  host.setGeneration({})
+  expect(connectionStatus(f)).toBeUndefined()
+  expect(host.runtime.getSnapshot()).toMatchObject({ phase: 'connected', route: 'public' })
+})
+
+it('wakes a lost Host once in the foreground and leaves open and pending sockets alone', () => {
+  const f = bootPage(undefined, {}, { language: 'en-US' })
+  const host = connectionFor(f)
+  const visible = () => { f.document.hidden = false; f.fire('visibilitychange', {}); f.fire('pageshow', { persisted: true }); f.advance(0) }
+  const hidden = () => { f.document.hidden = true; f.fire('visibilitychange', {}) }
+  visible()
+  const live = host.openMux(); host.ready()
+  hidden(); visible()
+  expect(host.reconnect).not.toHaveBeenCalled()
+  hidden(); host.lost(); live.fire('close')
+  f.browser.onLine = false
+  visible()
+  expect(host.reconnect).not.toHaveBeenCalled()
+  expect(connectionStatus(f)?.attributes.lang).toBe('en')
+  f.browser.onLine = true
+  hidden(); visible(); visible()
+  expect(host.reconnect).toHaveBeenCalledOnce()
+  const pending = new f.window.WebSocket('/api/remote.mux') as StandInSocket
+  hidden(); visible()
+  expect(host.reconnect).toHaveBeenCalledOnce()
+  pending.fire('close')
+  hidden(); visible()
+  expect(host.reconnect).toHaveBeenCalledTimes(2)
 })
 
 it('bounds boot reports and removes credentials, arbitrary query parameters and fragments', async () => {
@@ -658,9 +719,13 @@ const dialog = (elements: StandInElement[]) => elements.find(node => node.id ===
 const connectionStatus = (f: ReturnType<typeof bootPage>) => f.document.getElementById('dsh-rc-connection-status') ?? undefined
 const announcement = (f: ReturnType<typeof bootPage>) => connectionStatus(f)?.children.find(child => child.attributes.role === 'status')?.textContent
 
-it('says it already switched to the LAN entry when the LAN page boots', () => {
-  const f = bootPage(undefined, {}, { search: '?rc=lan', href: 'https://rc.example/?rc=lan' })
+it('announces the LAN route only after the landing page establishes its Host session', () => {
+  const f = bootPage(undefined, {}, { search: '?rc=lan', href: 'https://rc.example/?rc=lan', context: { entry: 'lan' } })
   expect(f.historyReplacements).toEqual(['/'])
+  const host = connectionFor(f)
+  host.openMux()
+  expect(announcement(f)).toBeUndefined()
+  host.ready()
   expect(announcement(f)).toBe('已切换到局域网')
   f.advance(2600)
   expect(connectionStatus(f)).toBeUndefined()
@@ -699,15 +764,44 @@ it('trusts the node identity over the flat compatibility aliases', async () => {
   expect(f.replacements).toEqual([`${LAN_URL}/?rc=lan`])
 })
 
-it('cancels the fallback when the connection comes back first', async () => {
+it('cancels a scheduled or in-flight fallback when the Host session recovers', async () => {
+  for (const alreadyStarted of [false, true]) {
+    const f = bootPage(undefined, {}, { context: context() })
+    const host = connectionFor(f)
+    f.fire('dsh-rc-offline', new Event('dsh-rc-offline'))
+    const timer = f.timers.at(-1)!
+    if (alreadyStarted) f.advance(1500)
+    host.openMux()
+    expect(announcement(f)).toBe('正在重新连接电脑…')
+    host.ready()
+    expect(timer.cancelled).toBe(true)
+    if (alreadyStarted) {
+      expect(f.requests.at(-1)?.signal?.aborted).toBe(true)
+      f.answerWith(200, JSON.stringify(fallbackAnswer()))
+    } else {
+      f.advance(1500)
+      expect(f.requests).toHaveLength(0)
+    }
+    await settle()
+    expect(f.replacements).toEqual([])
+    expect(connectionStatus(f)).toBeUndefined()
+  }
+})
+
+it('offers in-place recovery after a LAN outage and keeps the current workspace', async () => {
   const f = bootPage(undefined, {}, { context: context() })
+  const host = connectionFor(f)
   f.fire('dsh-rc-offline', new Event('dsh-rc-offline'))
-  const timer = f.timers.at(-1)!
-  f.fire('dsh-rc-online', new Event('dsh-rc-online'))
-  expect(timer.cancelled).toBe(true)
+  f.advance(1500)
+  f.answerWith(200, JSON.stringify({ sameHost: false, reason: 'lan-unavailable' }))
   await settle()
-  expect(f.requests).toHaveLength(0)
   expect(f.replacements).toEqual([])
+  expect(dialog(f.elements)).toBeUndefined()
+  expect(host.runtime.getSnapshot()).toMatchObject({ phase: 'reconnecting', reason: 'lan-unavailable' })
+  expect(announcement(f)).toBe('局域网暂不可用，点击重试当前连接')
+  connectionStatus(f)!.children.find(child => child.tagName === 'BUTTON')!.onclick!()
+  expect(host.reconnect).toHaveBeenCalledOnce()
+  expect(f.reloads()).toBe(0)
 })
 
 it('never follows a LAN entry that reports another Host, another fingerprint or another address', async () => {

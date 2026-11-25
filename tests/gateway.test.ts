@@ -39,7 +39,7 @@ async function fixture() {
   await new Promise<void>(resolve => upstream.listen(0, '127.0.0.1', resolve))
   cleanup.push(async () => { for (const client of wss.clients) client.terminate(); wss.close(); upstream.closeAllConnections(); await new Promise<void>(resolve => upstream.close(() => resolve())) })
   const port = (upstream.address() as { port: number }).port
-  gateway = new Gateway({ pairing, upstreamPort: port, upstreamCookie: () => 'host-private=secret', manage: async (input, local) => { if (input.action === 'approve' && !local) throw new Error('本机确认'); return { local } }, index: async () => '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Host</title></head><body><div id="root"></div></body></html>', boot: () => bootScript(), onBootReport: (report, device) => reports.push({ report, device }) })
+  gateway = new Gateway({ pairing, upstreamPort: port, upstreamCookie: () => 'host-private=secret', manage: async (input, local) => { if (input.action === 'approve' && !local) throw new Error('本机确认'); return { local } }, index: async () => '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Host</title></head><body><div id="root"></div></body></html>', boot: context => bootScript({ ...context, version: '0.7.0' }), onBootReport: (report, device) => reports.push({ report, device }) })
   await gateway.listen('127.0.0.1'); cleanup.push(() => gateway.close())
   const base = `http://127.0.0.1:${gateway.port}`
   const claim = pairing.request(pairing.issue().token, 'Android'); pairing.approve(claim.id)
@@ -245,6 +245,30 @@ describe('gateway admission and transport', () => {
     ws.send('compressed hello'); expect(String((await once(ws, 'message'))[0])).toBe('compressed hello')
     await vi.waitFor(() => expect(f.upstreamCompression.join()).toContain('permessage-deflate'))
     ws.close()
+  })
+  it('reports an active mux route and clears it after the session closes', async () => {
+    const f = await fixture()
+    const headers = { cookie: f.cookie, origin: f.base }
+    const route = async () => {
+      const result = await fetch(f.base + MANAGE_PATH, { method: 'POST', headers: { ...headers, 'content-type': 'application/json' }, body: '{"action":"status"}' })
+      expect(result.status).toBe(200)
+      return (await result.json()).currentRoute
+    }
+    expect((await fetch(f.base + '/rc/boot.js')).status).toBe(403)
+    const boot = await (await fetch(f.base + '/rc/boot.js', { headers })).text()
+    expect(boot).toContain('"entry":"lan","version":"0.7.0"')
+    const wsBase = f.base.replace('http:', 'ws:')
+    const other = new WebSocket(wsBase + '/api/other', { headers })
+    await once(other, 'open')
+    expect(await route()).toBeUndefined()
+    const session = new WebSocket(wsBase + '/api/remote.mux', { headers })
+    await once(session, 'open')
+    expect(await route()).toBe('lan')
+    await fetch(f.base + '/api/data', { headers })
+    expect(await route()).toBe('lan')
+    const closed = once(session, 'close'); session.close(); await closed
+    await vi.waitFor(async () => expect(await route()).toBeUndefined())
+    other.close()
   })
   it('forwards WS text and binary, then closes both legs on revocation', async () => {
     const f = await fixture(), ws = new WebSocket(f.base.replace('http:', 'ws:') + '/api/remote.mux', { headers: { cookie: f.cookie, origin: f.base } })

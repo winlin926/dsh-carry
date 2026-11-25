@@ -31,6 +31,7 @@
       }
       header { width: 100%; max-width: 26rem; margin-bottom: 1.5rem; }
       .brand { display: flex; align-items: center; gap: .55rem; font-weight: 600; letter-spacing: .02em; }
+      .brand button { flex: none; margin-inline-start: auto; }
       .dot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 3px rgba(139,152,169,.15); }
       .dot.ok { background: var(--ok); box-shadow: 0 0 0 3px rgba(63,185,80,.18); }
       .dot.bad { background: var(--bad); }
@@ -70,59 +71,127 @@
   </head>
   <body>
     <header>
-      <div class="brand"><span class="dot" id="dot"></span><span>DSH Remote</span></div>
+      <div class="brand"><span class="dot" id="dot" aria-hidden="true"></span><span>DSH Remote</span><button type="button" id="language" lang="en">English</button></div>
       <div class="node-line" id="node-name">公网节点</div>
     </header>
 
     <main>
-      <section class="card" id="idle" hidden>
-        <h2>等待配对二维码</h2>
-        <p>请用电脑端 DSH Remote 生成配对二维码，再用手机相机扫描。</p>
-        <p>二维码只在电脑端生成，有效期内一次性使用。</p>
-        <p id="idle-hint">本节点只负责中继：配对票据一次性有效，聊天与审批内容全程端到端加密，节点无法解读。</p>
+      <section class="card" id="idle">
+        <h2 data-text="scanTitle">等待配对二维码</h2>
+        <p data-text="scan">请在电脑的「远程控制」面板生成二维码，再用手机扫描。</p>
+        <p data-text="once">二维码在有效期内只能使用一次。</p>
       </section>
 
       <section class="card" id="confirm" hidden>
-        <h2>确认配对</h2>
-        <p>请核对下面的信息与电脑端显示的一致。目标主机指纹由本页根据二维码中的公钥现场计算，不依赖节点。</p>
+        <h2 data-text="confirmTitle">确认配对</h2>
+        <p data-text="compare">请核对指纹与电脑端显示的一致。手机确认后，还须在电脑端批准。</p>
         <div class="host">
           <dl>
-            <dt>节点</dt><dd id="confirm-name"></dd>
-            <dt>类型</dt><dd id="confirm-type"></dd>
-            <dt>目标主机指纹</dt><dd class="mono" id="host-fp"></dd>
-            <dt>有效期</dt><dd id="expires"></dd>
+            <dt data-text="node">公网节点</dt><dd id="confirm-name"></dd>
+            <dt data-text="kind">类型</dt><dd id="confirm-type"></dd>
+            <dt data-text="fingerprint">目标主机指纹</dt><dd class="mono" id="host-fp"></dd>
+            <dt data-text="expiry">有效期</dt><dd id="expires"></dd>
           </dl>
         </div>
-        <!-- 配对短码不再展示：授权只依赖双端确认与指纹核对。 -->
         <div class="row">
-          <button id="reject">拒绝</button>
-          <button id="approve" class="primary">确认是本机</button>
+          <button type="button" id="reject" data-text="reject" disabled>拒绝</button>
+          <button type="button" id="approve" class="primary" data-text="approve" disabled>确认是本机</button>
         </div>
-        <div class="status" id="status"></div>
+        <button type="button" id="retry" data-text="retry" hidden>查询配对状态</button>
       </section>
 
       <section class="card" id="done" hidden>
-        <h2>配对完成</h2>
-        <p>这台设备已加入该主机，可以关闭页面。</p>
-        <div class="status ok" id="done-status"></div>
+        <h2 data-text="doneTitle">配对完成</h2>
       </section>
+
+      <div class="status" id="status" role="status" aria-live="polite"></div>
     </main>
 
-    <footer>
-      本服务只是中继：不解密业务数据，不记录聊天或审批内容；私钥只保存在 Host 与手机本地。
+    <footer data-text="trust">
+      节点终止 TLS，运营者可能看到转发的内容。本服务不提供端到端加密。请只使用你信任的节点。
     </footer>
 
     <script>
       'use strict'
 
       const $ = id => document.getElementById(id)
-      const B64URL = /^[A-Za-z0-9_-]{43}$/
+      const TICKET = /^[A-Za-z0-9_-]{43}$/
+      const IDENTITY_KEY = /^[A-Za-z0-9_-]{40,120}$/
       const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
       const IDENTITY_STORAGE = 'dsh-pairing-identity'
+      const copy = {
+        title: ['DSH Remote 配对', 'Pair with DSH Remote'],
+        scanTitle: ['等待配对二维码', 'Scan a pairing QR code'],
+        scan: ['请在电脑的「远程控制」面板生成二维码，再用手机扫描。', 'Generate a QR code in the Remote Control panel on your computer, then scan it with your phone.'],
+        once: ['二维码在有效期内只能使用一次。', 'The QR code can be used once before it expires.'],
+        trust: ['节点终止 TLS，运营者可能看到转发的内容。本服务不提供端到端加密。请只使用你信任的节点。', 'TLS terminates at the relay. The operator may see forwarded content. This service does not provide end-to-end encryption. Use a relay you trust.'],
+        confirmTitle: ['确认配对', 'Confirm pairing'],
+        compare: ['请核对指纹与电脑端显示的一致。手机确认后，还须在电脑端批准。', 'Compare the fingerprint with the one on your computer. Pairing requires approval on both devices.'],
+        node: ['公网节点', 'Public relay'],
+        kind: ['类型', 'Type'],
+        fingerprint: ['目标主机指纹', 'Computer fingerprint'],
+        expiry: ['有效期', 'Expires at'],
+        gateway: ['隧道网关', 'Tunnel gateway'],
+        relay: ['自托管服务', 'Self-hosted relay'],
+        reject: ['拒绝', 'Reject'],
+        approve: ['确认是本机', 'Confirm this computer'],
+        retry: ['查询配对状态', 'Check pairing status'],
+        doneTitle: ['配对完成', 'Paired'],
+        browser: ['网页浏览器', 'Web browser'],
+        connecting: ['正在连接中继…', 'Connecting to the relay…'],
+        requesting: ['正在向电脑发起配对…', 'Requesting pairing with the computer…'],
+        compareStatus: ['指纹一致时，点击「确认是本机」。', 'Confirm only if the fingerprints match.'],
+        confirming: ['正在提交手机确认…', 'Sending your confirmation…'],
+        rejecting: ['正在提交拒绝…', 'Sending your rejection…'],
+        waiting: ['已在手机上确认，请在电脑上批准。', 'Confirmed on this phone. Approve the request on your computer.'],
+        checking: ['正在查询原配对申请…', 'Checking the existing pairing request…'],
+        checkFailed: ['暂时无法获取结果。网络恢复后可查询这次申请。', 'The result is unavailable. Check this request again when your connection returns.'],
+        decisionPending: ['节点尚未收到手机的选择，请核对指纹后重新确认或拒绝。', 'The relay has no decision from this phone yet. Compare the fingerprint, then confirm or reject.'],
+        opening: ['配对完成，正在打开电脑上的 DSH。', 'Paired. Opening DSH on your computer…'],
+        expired: ['配对二维码或申请已失效。请在电脑上生成新二维码后扫描。', 'This QR code or request is no longer valid. Generate a new QR code on your computer and scan it.'],
+        rejected: ['这次配对已被拒绝。需要连接时，请在电脑上生成新二维码。', 'This request was rejected. Generate a new QR code on your computer when you want to connect.'],
+        invalid: ['无法识别这个二维码。请在电脑上生成新二维码后扫描。', 'This QR code is invalid. Generate a new QR code on your computer and scan it.'],
+        nodeUnavailable: ['暂时无法连接中继。请检查网络后重新扫码。', 'The relay is unreachable. Check your network, then scan the QR code again.'],
+        identityUnavailable: ['浏览器无法加载设备身份。请用支持 WebCrypto 和网站存储的浏览器重新扫码。', 'This browser could not load its device identity. Scan again in a browser with WebCrypto and site storage enabled.'],
+        mismatch: ['主机指纹和二维码不一致。请在电脑上核对后重新扫码。', 'The computer fingerprint differs from the QR code. Check it on your computer and scan again.'],
+        deviceMismatch: ['此浏览器的设备身份与现有授权不一致。请在电脑上核对已授权设备。', 'This browser has a different identity from the existing pairing. Check paired devices on your computer.'],
+        hostOffline: ['电脑尚未连上中继。请在电脑上确认远程连接已开启，再扫码。', 'The computer is offline. Turn on the remote connection on your computer, then scan again.'],
+        claimUnknown: ['未收到申请结果。请在电脑上检查待确认的申请，拒绝旧申请后生成新二维码。', 'No pairing result arrived. Check for a pending request on your computer, reject it if present, and generate a new QR code.'],
+        sessionMissing: ['双方已确认，但浏览器未取得这台电脑的访问权限。请在电脑上生成新二维码后扫描。', 'Both devices approved pairing, but this browser could not access the computer. Generate a new QR code on your computer and scan it.'],
+      }
+      let language = /^zh(?:-|$)/i.test(navigator.language) ? 'zh-CN' : 'en'
+      const t = key => copy[key][language === 'zh-CN' ? 0 : 1]
 
-      function setStatus(el, text, kind) {
-        el.textContent = text
+      let node
+      let expiresAt
+      let statusKey = ''
+      let statusKind
+
+      function setStatus(key, kind) {
+        statusKey = key
+        statusKind = kind
+        const el = $('status')
+        const text = key ? t(key) : ''
+        if (el.textContent !== text) el.textContent = text
         el.className = 'status' + (kind ? ' ' + kind : '')
+      }
+
+      function renderLanguage() {
+        document.documentElement.lang = language
+        document.title = t('title')
+        for (const element of document.querySelectorAll('[data-text]')) element.textContent = t(element.dataset.text)
+        const toggle = $('language')
+        toggle.lang = language === 'en' ? 'zh-CN' : 'en'
+        toggle.textContent = language === 'en' ? '简体中文' : 'English'
+        $('node-name').textContent = $('confirm-name').textContent = node?.name || t('node')
+        $('confirm-type').textContent = t(node?.kind === 'gateway' ? 'gateway' : 'relay')
+        $('expires').textContent = expiresAt ? new Date(expiresAt).toLocaleTimeString(language, { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'
+        setStatus(statusKey, statusKind)
+      }
+
+      $('language').onclick = () => {
+        language = language === 'en' ? 'zh-CN' : 'en'
+        renderLanguage()
       }
 
       function setDot(kind) {
@@ -173,94 +242,206 @@
       }
 
       function parseTicket() {
+        if (!location.hash) return
         const params = new URLSearchParams(location.hash.slice(1))
-        const version = params.get('v')
+        history.replaceState(null, '', location.pathname + location.search)
         const ticket = params.get('ticket') || ''
         const hostIdentityKey = params.get('key') || ''
-        if (version !== '1' || !B64URL.test(ticket) || !B64URL.test(hostIdentityKey)) return null
-        history.replaceState(null, '', location.pathname + location.search)
+        if (params.get('v') !== '1' || !TICKET.test(ticket) || !IDENTITY_KEY.test(hostIdentityKey) ||
+            b64url(fromB64url(hostIdentityKey)) !== hostIdentityKey) throw new Error(t('invalid'))
         return { ticket, hostIdentityKey }
       }
 
       async function fingerprintOf(identityKey) {
-        const der = fromB64url(identityKey)
-        const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', der))
-        const hex = Array.from(digest.subarray(0, 16), byte => byte.toString(16).padStart(2, '0')).join('')
-        return hex.match(/.{4}/g).join('-').toUpperCase()
+        const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', fromB64url(identityKey)))
+        const fingerprint = Array.from(digest.subarray(0, 16), byte => byte.toString(16).padStart(2, '0')).join('')
+        return { id: b64url(digest), fingerprint }
       }
 
       async function json(path, options) {
-        const response = await fetch(path, options)
-        const text = await response.text()
-        let body = null
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 10_000)
         try {
-          body = text ? JSON.parse(text) : null
-        } catch {
-          body = null
+          const response = await fetch(path, { ...options, signal: controller.signal })
+          const body = await response.json().catch(() => null)
+          if (!response.ok) {
+            const error = new Error(body?.error?.message || `HTTP ${response.status}`)
+            error.code = body?.error?.code
+            throw error
+          }
+          return body
+        } finally {
+          clearTimeout(timeout)
         }
-        if (!response.ok) {
-          const error = new Error((body && (body.message || body.error)) || '请求失败（HTTP ' + response.status + '）')
-          error.code = body && body.error
-          throw error
-        }
-        return body
       }
 
-      function formatTime(ms) {
-        if (typeof ms !== 'number') return '—'
-        return new Date(ms).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      const resultMessages = {
+        TICKET_INVALID: 'expired', TICKET_EXPIRED: 'expired', TICKET_USED: 'expired',
+        PAIRING_NOT_FOUND: 'expired', PAIRING_EXPIRED: 'expired', PAIRING_REJECTED: 'rejected',
+        PAIRING_TOKEN_INVALID: 'expired', PAIRING_TOKEN_REQUIRED: 'expired',
+        HOST_OFFLINE: 'hostOffline', DEVICE_IDENTITY_MISMATCH: 'deviceMismatch',
+        INVALID_IDENTITY_KEY: 'identityUnavailable',
       }
 
-      function finish() {
+      function resultMessage(error) {
+        return Object.hasOwn(resultMessages, error?.code) ? resultMessages[error.code] : undefined
+      }
+
+      function showFailure(key) {
         $('confirm').hidden = true
-        $('idle').hidden = true
-        $('done').hidden = false
-        $('done-status').textContent = '配对完成，正在打开电脑上的 DSH。'
-        location.replace('/')
-      }
-
-      function showFailure(message) {
-        $('confirm').hidden = true
-        $('done').hidden = true
         $('idle').hidden = false
-        const hint = $('idle-hint')
-        hint.textContent = '配对链接不可用或已过期：' + message
-        hint.className = 'status bad'
+        setStatus(key, 'bad')
+      }
+
+      function watchClaim(claim, target) {
+        const path = '/v1/pairings/' + encodeURIComponent(claim.requestId)
+        const headers = { 'x-pairing-token': claim.pairingToken }
+        const approve = $('approve'), reject = $('reject'), retry = $('retry')
+        let timer, busy = false, settled = false, queued, missedResponse = false, verifyingSession = false
+
+        function controls(canDecide, canRetry = false) {
+          approve.disabled = reject.disabled = !canDecide
+          retry.hidden = !canRetry
+        }
+
+        function stop(key) {
+          settled = true
+          clearTimeout(timer)
+          document.removeEventListener('visibilitychange', resume)
+          window.removeEventListener('online', resume)
+          controls(false)
+          if (key !== 'opening') { showFailure(key); return }
+          $('confirm').hidden = true
+          $('done').hidden = false
+          setStatus(key, 'ok')
+          location.replace('/')
+        }
+
+        function schedule(delay = 1500) {
+          if (!document.hidden) timer = setTimeout(update, Math.max(0, Math.min(delay, expiresAt - Date.now())))
+        }
+
+        function resume() {
+          clearTimeout(timer)
+          if (document.hidden) queued = undefined
+          else void update()
+        }
+
+        async function update() {
+          if (settled || busy || document.hidden) return
+          clearTimeout(timer)
+          const decision = Date.now() < expiresAt ? queued : undefined
+          queued = undefined
+          busy = true
+          let nextPoll
+          try {
+            const result = await (decision ? json(path + '/' + decision, { method: 'POST', headers }) : json(path, { headers }))
+            if (result?.requestId !== claim.requestId) throw new Error('Invalid pairing response')
+            if (result.state === 'rejected') { stop('rejected'); return }
+            if (result.state === 'complete' && result.complete === true) {
+              if (missedResponse) {
+                // A completed request can only issue its cookie once. An older cookie may target another host.
+                verifyingSession = true
+                if (document.hidden) return
+                const { hosts } = await json('/v1/hosts').catch(error => {
+                  if (error.code === 'AUTH_REQUIRED') return { hosts: [] }
+                  throw error
+                })
+                if (hosts?.length !== 1 || hosts[0]?.hostId !== target.id) { stop('sessionMissing'); return }
+              }
+              stop('opening')
+              return
+            }
+            if (Date.now() >= expiresAt) { stop('expired'); return }
+            switch (result.state) {
+              case 'client_approved':
+                queued = undefined
+                controls(false)
+                setStatus('waiting')
+                break
+              case 'pending':
+              case 'host_approved':
+                if (!queued) {
+                  controls(true)
+                  setStatus(missedResponse ? 'decisionPending' : 'compareStatus')
+                }
+                break
+              default: throw new Error('Invalid pairing state')
+            }
+            missedResponse = false
+            nextPoll = 1500
+          } catch (error) {
+            const terminal = resultMessage(error)
+            if (terminal || Date.now() >= expiresAt && !verifyingSession) {
+              stop(terminal || 'expired')
+            } else {
+              queued = undefined
+              missedResponse = true
+              controls(false, true)
+              setStatus('checkFailed', 'bad')
+              if (!verifyingSession) nextPoll = expiresAt - Date.now()
+            }
+          } finally {
+            busy = false
+            if (!settled && queued) void update()
+            else if (!settled && nextPoll !== undefined) schedule(nextPoll)
+          }
+        }
+
+        function decide(action) {
+          if (approve.disabled || settled || document.hidden) return
+          controls(false)
+          queued = action
+          setStatus(action === 'confirm' ? 'confirming' : 'rejecting')
+          void update()
+        }
+
+        approve.onclick = () => decide('confirm')
+        reject.onclick = () => decide('reject')
+        retry.onclick = () => {
+          if (retry.hidden || busy || settled || document.hidden) return
+          controls(false)
+          setStatus('checking')
+          void update()
+        }
+        document.addEventListener('visibilitychange', resume)
+        window.addEventListener('online', resume)
+        if (Date.now() < expiresAt) {
+          controls(true)
+          setStatus('compareStatus')
+          schedule()
+        } else void update()
       }
 
       async function start() {
-        let config = null
+        renderLanguage()
+        let context
+        try { context = parseTicket() } catch { showFailure('invalid'); return }
+        setStatus('connecting')
         try {
-          config = await json('/v1/config')
-          $('node-name').textContent = (config && config.name) || '公网节点'
+          node = await json('/v1/config')
+          if (!node || typeof node.name !== 'string') throw new Error('Invalid relay configuration')
           setDot('ok')
-        } catch (error) {
+          renderLanguage()
+        } catch {
           setDot('bad')
-          showFailure(error instanceof Error ? error.message : String(error))
+          showFailure('nodeUnavailable')
           return
         }
+        if (!context) { setStatus(''); return }
 
-        const context = parseTicket()
-        if (!context) {
-          $('idle').hidden = false
-          return
-        }
-
-        $('confirm').hidden = false
-        $('confirm-name').textContent = config.name || '公网节点'
-        $('confirm-type').textContent = config.kind === 'gateway' ? '隧道网关' : '自托管服务'
-        setStatus($('status'), '正在向电脑端发起配对…')
-
-        let identity
-        let fingerprint
+        let identity, target
         try {
           identity = await loadIdentity()
-          fingerprint = await fingerprintOf(context.hostIdentityKey)
-        } catch (error) {
-          showFailure(error instanceof Error ? error.message : String(error))
+          target = await fingerprintOf(context.hostIdentityKey)
+        } catch {
+          showFailure('identityUnavailable')
           return
         }
-        $('host-fp').textContent = fingerprint
+        $('idle').hidden = true
+        $('confirm').hidden = false
+        $('host-fp').textContent = target.fingerprint.toUpperCase().match(/.{4}/g).join('-')
+        setStatus('requesting')
 
         let claim
         try {
@@ -269,95 +450,23 @@
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
               ticket: context.ticket,
-              client: {
-                deviceId: identity.deviceId,
-                name: '网页浏览器',
-                platform: 'web',
-                identityKey: identity.identityKey,
-              },
+              client: { deviceId: identity.deviceId, name: t('browser'), platform: 'web', identityKey: identity.identityKey },
             }),
           })
+          if (typeof claim?.requestId !== 'string' || !claim.requestId ||
+              typeof claim.pairingToken !== 'string' || !TICKET.test(claim.pairingToken) ||
+              !Number.isSafeInteger(claim.expiresAt) || claim.expiresAt <= 0) throw new Error('Invalid pairing claim')
         } catch (error) {
-          showFailure(error instanceof Error ? error.message : String(error))
+          showFailure(resultMessage(error) || 'claimUnknown')
           return
         }
-
-        $('expires').textContent = formatTime(claim.expiresAt)
-        setStatus($('status'), '核对目标主机指纹和电脑端一致后，再确认风险并继续。')
-
-        const headers = { 'x-pairing-token': claim.pairingToken }
-        const approve = $('approve')
-        const reject = $('reject')
-        let settled = false
-
-        async function poll() {
-          for (let attempt = 0; attempt < 120 && !settled; attempt += 1) {
-            await new Promise(resolve => setTimeout(resolve, 1500))
-            let state
-            try {
-              state = await json('/v1/pairings/' + encodeURIComponent(claim.requestId), { headers })
-            } catch (error) {
-              const code = error && error.code
-              if (code === 'PAIRING_NOT_FOUND' || code === 'PAIRING_EXPIRED') {
-                setStatus($('status'), '配对已失效，请回到电脑端重新生成二维码。', 'bad')
-                approve.disabled = true
-                reject.disabled = true
-                return
-              }
-              continue
-            }
-            if (state.state === 'complete') {
-              settled = true
-              finish()
-              return
-            }
-            if (state.state === 'rejected') {
-              setStatus($('status'), '配对已被拒绝。', 'bad')
-              approve.disabled = true
-              reject.disabled = true
-              return
-            }
-            if (state.state === 'client_approved' || state.state === 'pending') {
-              setStatus($('status'), '等待电脑端批准…')
-            }
-          }
+        if (claim.host?.hostId !== target.id || claim.host.fingerprint !== target.fingerprint) {
+          showFailure('mismatch')
+          return
         }
-
-        approve.addEventListener('click', async () => {
-          approve.disabled = true
-          reject.disabled = true
-          try {
-            const result = await json('/v1/pairings/' + encodeURIComponent(claim.requestId) + '/confirm', {
-              method: 'POST',
-              headers,
-            })
-            if (result.state === 'complete') finish()
-            else {
-              setStatus($('status'), '等待电脑端批准…')
-              await poll()
-            }
-          } catch (error) {
-            setStatus($('status'), '确认失败：' + (error instanceof Error ? error.message : String(error)), 'bad')
-            approve.disabled = false
-            reject.disabled = false
-          }
-        })
-
-        reject.addEventListener('click', async () => {
-          approve.disabled = true
-          reject.disabled = true
-          try {
-            await json('/v1/pairings/' + encodeURIComponent(claim.requestId) + '/reject', {
-              method: 'POST',
-              headers,
-            })
-          } catch {
-            // A rejected coupon must not look approved: fall through to the idle view.
-          }
-          showFailure('已拒绝本次配对。')
-        })
-
-        poll()
+        expiresAt = claim.expiresAt
+        renderLanguage()
+        watchClaim(claim, target)
       }
 
       start()

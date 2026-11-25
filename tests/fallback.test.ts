@@ -121,6 +121,16 @@ describe('same-host LAN fallback', () => {
     } finally { await lan.gateway.close() }
   })
 
+  it('reports an unavailable LAN entry without treating it as another Host', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-rc-fallback-')); folders.push(root)
+    const lan = createServer((_req, res) => { res.writeHead(503); res.end('Temporarily unavailable') })
+    await new Promise<void>(resolve => lan.listen(0, '127.0.0.1', resolve))
+    goto.push(() => new Promise<void>(resolve => lan.close(() => resolve())))
+    const address = lan.address() as { port: number }
+    const value = await publicGateway(root, `http://127.0.0.1:${address.port}`, node(SELF), HOST)
+    expect(JSON.parse((await fallback(value.port, value.credential)).body)).toEqual({ sameHost: false, reason: 'lan-unavailable' })
+  })
+
   it('refuses when the browser has no LAN authorization, and when no LAN entry is configured', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-rc-fallback-')); folders.push(root)
     const lan = await new Lan(node(SELF), root).start()

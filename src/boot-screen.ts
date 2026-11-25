@@ -7,7 +7,9 @@ export interface BootFrame {
   announcement: string
 }
 
-export function createBootScreen() {
+export function createBootScreen(language: 'zh' | 'en' = 'zh') {
+  const en = language === 'en'
+  const lang = en ? 'en' : 'zh-CN'
   const make = (tag: string, className: string, parent?: HTMLElement) => {
     const element = document.createElement(tag)
     element.className = className
@@ -46,10 +48,10 @@ export function createBootScreen() {
 @media(prefers-reduced-motion:reduce){#dsh-rc-boot-screen,#dsh-rc-boot-screen .fill{transition:none}#dsh-rc-boot-screen .sweep{display:none}#dsh-rc-boot-screen .track[data-pending=true]::after{animation:none;transform:translateX(89%)}}`
   const root = make('div', '')
   root.id = 'dsh-rc-boot-screen'
-  root.setAttribute('lang', 'zh-CN')
+  root.setAttribute('lang', lang)
   const theme = make('div', 'theme', root)
   theme.setAttribute('role', 'group')
-  theme.setAttribute('aria-label', '启动页配色')
+  theme.setAttribute('aria-label', en ? 'Startup theme' : '启动页配色')
   const themeKey = 'dsh-rc-boot-theme'
   let selected = 'system'
   try { selected = window.localStorage?.getItem(themeKey) ?? 'system' } catch { /* storage is optional */ }
@@ -57,7 +59,7 @@ export function createBootScreen() {
   const buttons = (['system', 'light', 'dark'] as const).map((value, index) => {
     const button = make('button', '', theme) as HTMLButtonElement
     button.type = 'button'
-    const label = ['跟随系统', '亮色', '暗色'][index]!
+    const label = (en ? ['System', 'Light', 'Dark'] : ['跟随系统', '亮色', '暗色'])[index]!
     const icon = [
       '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/>',
       '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/>',
@@ -87,7 +89,7 @@ export function createBootScreen() {
   make('span', 'sweep', fill)
   const live = make('div', '')
   live.id = 'dsh-rc-boot-live'
-  live.setAttribute('lang', 'zh-CN')
+  live.setAttribute('lang', lang)
   live.setAttribute('role', 'status')
   live.setAttribute('aria-live', 'polite')
   live.setAttribute('aria-atomic', 'true')

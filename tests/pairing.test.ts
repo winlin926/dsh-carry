@@ -132,72 +132,171 @@ it('records the pairing address and renames authorized devices', () => {
   expect(service.authenticate(lan)?.name).toBe('我的手机')
 })
 
+function openPairing(page: string, fetch: (path: string, input: { body: string }) => Promise<Response>, hash = '#pair=scan-token') {
+  const element = () => ({ textContent: '', hidden: true, disabled: true, lang: '', onclick: undefined as (() => Promise<void> | void) | undefined });
+  const elements = { confirm: element(), state: element(), error: element(), progress: element(), enter: element(), language: element(), 'target-fingerprint': element() };
+  if (!page.includes('id="confirm"')) Object.assign(elements, { confirm: null, 'target-fingerprint': null });
+  const visibility = new Map<string, () => void>();
+  const document = {
+    hidden: false, title: '', documentElement: { lang: '' },
+    querySelectorAll: () => [],
+    getElementById: (id: keyof typeof elements) => elements[id] ?? null,
+    addEventListener: (name: string, listener: () => void) => { visibility.set(name, listener) },
+  };
+  const stored = new Map<string, string>();
+  const location = { hash, replaced: '', replace(path: string) { this.replaced = path } };
+  const clock = { now: Date.now() };
+  const timers = new Map<number, () => void>();
+  let sequence = 0;
+  const ready = runInNewContext(page.match(/<script>([\s\S]*?)<\/script>/)![1]!, {
+    document, location, history: { replaceState: () => { location.hash = '' } },
+    localStorage: { getItem: (key: string) => stored.get(key), setItem: (key: string, value: string) => stored.set(key, value) },
+    URLSearchParams, atob, crypto: webcrypto, navigator: {}, AbortSignal, Date: { now: () => clock.now }, fetch,
+    setTimeout: (callback: () => void) => { timers.set(++sequence, callback); return sequence },
+    clearTimeout: (id: number) => { timers.delete(id) },
+  }) as Promise<void>;
+  function setHidden(hidden: boolean) {
+    document.hidden = hidden;
+    visibility.get('visibilitychange')?.();
+  }
+  return { elements, document, location, stored, clock, timers, ready, setHidden };
+}
+
+const unpaired = () => Response.json({ code: 'unpaired' }, { status: 403 });
+
 it.each(['valid', 'wrong key', 'missing token'] as const)('handles public confirmation with %s', async scenario => {
-  const { publicKey } = generateKeyPairSync('ed25519')
-  const der = publicKey.export({ type: 'spki', format: 'der' })
-  const fingerprint = createHash('sha256').update(der).digest('hex').slice(0, 32)
-  const page = pairingPage({ name: 'DSH', kind: 'gateway', fingerprint, fingerprintGroups: fingerprint, publicKey: der.toString('base64url'), protocol: 2 })
-  expect(page).toContain('id="confirm" disabled')
-  const confirm = { disabled: true, hidden: false, onclick: undefined as (() => Promise<void>) | undefined }
-  const state = { textContent: '' }, error = { textContent: '' }, progress = { hidden: true }
-  const elements = { confirm, state, error, progress, enter: {}, 'target-fingerprint': {} }
-  const requests: unknown[] = []
-  let redirected = ''
-  const hash = scenario === 'missing token' ? '' : `#pair=scan-token${scenario === 'wrong key' ? '&key=YWJj' : ''}`
-  await runInNewContext(page.match(/<script>([\s\S]*?)<\/script>/)![1]!, {
-    document: { getElementById: (id: keyof typeof elements) => elements[id] },
-    location: { hash, replace: (path: string) => { redirected = path } }, history: { replaceState: () => {} },
-    URLSearchParams, atob, crypto: webcrypto, navigator: {}, setTimeout: (resolve: () => void) => resolve(),
-    fetch: async (path: string, input: { body: string }) => {
-      if (path.endsWith('/manage')) return Response.json({}, { status: 403 })
-      requests.push(JSON.parse(input.body))
-      return Response.json(path.endsWith('/request') ? { id: 'pending', key: 'claim-key', expiresAt: Date.now() + 300000 } : { state: 'approved' })
-    },
-  })
-  expect(requests).toEqual([])
-  expect(confirm.disabled).toBe(scenario !== 'valid')
+  const { publicKey } = generateKeyPairSync('ed25519');
+  const der = publicKey.export({ type: 'spki', format: 'der' });
+  const fingerprint = createHash('sha256').update(der).digest('hex').slice(0, 32);
+  const page = pairingPage({ name: 'DSH', kind: 'gateway', fingerprint, fingerprintGroups: fingerprint, publicKey: der.toString('base64url'), protocol: 2 });
+  expect(page).toContain('id="confirm" disabled');
+  const requests: unknown[] = [];
+  const hash = scenario === 'missing token' ? '' : `#pair=scan-token${scenario === 'wrong key' ? '&key=YWJj' : ''}`;
+  const view = openPairing(page, async (path, input) => {
+    if (path.endsWith('/manage')) return unpaired();
+    requests.push(JSON.parse(input.body));
+    return Response.json(path.endsWith('/request') ? { id: 'pending', key: 'claim-key', expiresAt: Date.now() + 300000 } : { state: 'approved' });
+  }, hash);
+  await view.ready;
+  const { confirm, state, error, progress } = view.elements;
+  expect(requests).toEqual([]);
+  expect(confirm.disabled).toBe(scenario !== 'valid');
   if (scenario === 'valid') {
-    await confirm.onclick!()
-    expect(progress.hidden).toBe(false)
-    expect(requests).toEqual([{ token: 'scan-token', model: '', fingerprint }, { id: 'pending', key: 'claim-key' }])
-    expect(redirected).toBe('/')
+    await confirm.onclick!();
+    expect(progress.hidden).toBe(false);
+    expect(requests).toEqual([{ token: 'scan-token', model: '', fingerprint }, { id: 'pending', key: 'claim-key' }]);
+    expect(view.location.replaced).toBe('/');
   } else if (scenario === 'wrong key') {
-    expect(confirm.onclick).toBeUndefined()
-    expect(error.textContent).toContain('主机指纹与这台电脑不一致')
+    expect(confirm.onclick).toBeUndefined();
+    expect(error.textContent).toContain('主机指纹与这台电脑不一致');
   } else {
-    expect(confirm.hidden).toBe(true)
-    expect(state.textContent).toContain('扫描新的二维码')
+    expect(confirm.hidden).toBe(true);
+    expect(state.textContent).toContain('扫描新的二维码');
   }
 })
 
-it.each(['request', 'claim'])('resumes pairing after a failed %s without rescanning', async failed => {
-
-  const enter = { hidden: true, textContent: '', onclick: undefined as (() => Promise<void>) | undefined }
-  const state = { textContent: '' }
-  const tokens: string[] = [], claims: string[] = []
-  let interrupted = false, redirected = ''
-  const location = { hash: '#pair=scan-token', replace: (path: string) => { redirected = path } }
-  const script = [...pairingPage().matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)![1]!
-  await runInNewContext(script, {
-    document: { getElementById: (id: string) => id === 'enter' ? enter : id === 'state' ? state : {} },
-    location, history: { replaceState: () => { location.hash = '' } }, URLSearchParams, navigator: {},
-    setTimeout: (resolve: () => void) => resolve(),
-    fetch: async (path: string, input: { body: string }) => {
-      const data = JSON.parse(input.body)
-      if (path.endsWith('/manage')) return Response.json({}, { status: 403 })
-      if (path.endsWith('/request')) tokens.push(data.token)
-      else claims.push(data.id)
-      if (path.endsWith('/' + failed) && !interrupted) { interrupted = true; throw new Error('网络中断') }
-      return Response.json(path.endsWith('/request') ? { id: 'pending-device', key: 'claim-key', expiresAt: Date.now() + 300000 } : { state: 'approved' })
-    },
+it.each(['request', 'claim'] as const)('only retries a known claim after a failed %s', async failed => {
+  const requests: string[] = []
+  const claims: unknown[] = []
+  let interrupted = false
+  const view = openPairing(pairingPage(), async (path, input) => {
+    if (path.endsWith('/manage')) return unpaired()
+    const data = JSON.parse(input.body)
+    if (path.endsWith('/request')) requests.push(data.token)
+    else claims.push(data)
+    if (path.endsWith('/' + failed) && !interrupted) { interrupted = true; throw new Error('offline') }
+    return Response.json(path.endsWith('/request') ? { id: 'pending-device', key: 'claim-key', expiresAt: Date.now() + 300000 } : { state: 'approved' })
   })
-  expect(state.textContent).toBe('网络中断')
-  expect(enter.hidden).toBe(false)
-  expect(location.hash).toBe('')
+  await view.ready
+  const { enter, state } = view.elements
+  expect(view.location.hash).toBe('')
+  expect(state.textContent).toContain(failed === 'request' ? '无法确认配对请求是否送达' : '请检查网络后重试')
+  expect(enter.hidden).toBe(failed === 'request')
   await enter.onclick!()
-  expect(redirected).toBe('/')
-  expect(tokens).toEqual(failed === 'request' ? ['scan-token', 'scan-token'] : ['scan-token'])
-  expect(claims).toEqual(failed === 'claim' ? ['pending-device', 'pending-device'] : ['pending-device'])
+  expect(view.location.replaced).toBe(failed === 'request' ? '' : '/')
+  expect(requests).toEqual(['scan-token'])
+  const claim = { id: 'pending-device', key: 'claim-key' }
+  expect(claims).toEqual(failed === 'request' ? [] : [claim, claim])
+})
+
+it.each([
+  [400, 'qr_invalid', '二维码已失效', false],
+  [429, undefined, '无法确认配对请求是否送达', false],
+  [429, 'pairing_busy', '配对请求过多', true],
+] as const)('handles an initial pairing refusal (%s, %s)', async (status, code, message, retry) => {
+  let requests = 0
+  const view = openPairing(pairingPage(), async path => {
+    if (path.endsWith('/manage')) return unpaired()
+    expect(path).toBe('/rc/pair/request')
+    requests++
+    return Response.json({ code }, { status })
+  })
+  await view.ready
+  expect(view.elements.state.textContent).toContain(message)
+  expect(view.elements.enter.hidden).toBe(!retry)
+  view.setHidden(true)
+  view.setHidden(false)
+  expect(requests).toBe(1)
+  await view.elements.enter.onclick!()
+  expect(requests).toBe(retry ? 2 : 1)
+})
+
+it('pauses while hidden and resumes the same claim once, keeping the language choice', async () => {
+  const polls: unknown[] = []
+  const approval = Promise.withResolvers<Response>()
+  const view = openPairing(pairingPage(), async (path, input) => {
+    if (path.endsWith('/manage')) return unpaired()
+    if (path.endsWith('/request')) return Response.json({ id: 'pending', key: 'claim-key', expiresAt: Date.now() + 300000 })
+    polls.push(JSON.parse(input.body))
+    return polls.length === 1 ? Response.json({ state: 'pending' }) : approval.promise
+  })
+  await view.ready
+  expect(view.timers.size).toBe(1)
+  view.setHidden(true)
+  expect(view.timers.size).toBe(0)
+  view.elements.language.onclick!()
+  await view.elements.enter.onclick!()
+  expect(view.document.documentElement.lang).toBe('en')
+  expect(view.elements.state.textContent).toContain('Waiting for approval')
+  expect([...view.stored]).toEqual([['dsh-rc-language', 'en']])
+  expect(polls).toHaveLength(1)
+  view.setHidden(false)
+  view.setHidden(false)
+  await view.elements.enter.onclick!()
+  expect(polls).toEqual(Array.from({ length: 2 }, () => ({ id: 'pending', key: 'claim-key' })))
+  approval.resolve(Response.json({ state: 'approved' }))
+  await expect.poll(() => view.location.replaced).toBe('/')
+})
+
+it('stops checking a claim that expired in the background', async () => {
+  let polls = 0
+  const expiry = Date.now() + 300000
+  const view = openPairing(pairingPage(undefined, 'en'), async path => {
+    if (path.endsWith('/manage')) return unpaired()
+    if (path.endsWith('/request')) return Response.json({ id: 'pending', key: 'claim-key', expiresAt: expiry })
+    polls++
+    return Response.json({ state: 'pending' })
+  })
+  await view.ready
+  view.setHidden(true)
+  view.clock.now = expiry
+  view.setHidden(false)
+  await view.elements.enter.onclick!()
+  expect(view.elements.state.textContent).toContain('pairing request is no longer valid')
+  expect(view.elements.enter.hidden).toBe(true)
+  expect(view.timers.size).toBe(0)
+  expect(polls).toBe(1)
+})
+
+it('reopens an already authorized device without submitting another pairing', async () => {
+  const paths: string[] = []
+  const view = openPairing(pairingPage(), async path => {
+    paths.push(path)
+    return Response.json({ requests: [] })
+  }, '')
+  await view.ready
+  expect(paths).toEqual(['/api/dsh-remote-connect/manage'])
+  expect(view.location.replaced).toBe('/')
 })
 
 it('marks only historical public-entry authorizations for repair, exactly once', () => {

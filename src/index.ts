@@ -475,7 +475,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         credential = hostCookie(ready.connection, upstreamPort)
         const create = () => new Gateway({
           pairing, upstreamPort, upstreamCookie: () => credential, manage, index: renderIndex,
-          boot: context => bootScript(context), discovery, lanTls: tls,
+          boot: context => bootScript({ ...context, version: NODE_VERSION }), discovery, lanTls: tls,
           // Both modes listen on the LAN: a public phone can fall back to the same port, and those
           // addresses are exactly what the gateway's Host validation admits.
           addresses: lanAddresses,

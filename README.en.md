@@ -15,8 +15,6 @@
 
 `dsh-carry` lets you use the DeepSeek Harness (DSH) instance running on your computer from a phone browser. Scan a QR code to pair, then continue a conversation, approve tool requests, and view workspace files or HTML previews. Your phone connects to the computer’s DSH instance, so available sessions and tools depend on the host.
 
-**Setting up public access from scratch?** Follow the [SakuraFrp public-access walkthrough](docs/public-access-sakura.md) (in Chinese), from buying a domain to connecting your phone.
-
 <details>
 <summary><strong>Show the phone recording (26-second GIF): answer a question card, watch a tool run, open an HTML preview</strong></summary>
 
@@ -32,9 +30,11 @@ Install the plugin on the computer you want to reach. In the **DSH desktop app**
 dsh plugin --profile web add @winlin926/dsh-carry@latest
 ```
 
-1. On the computer, open **Remote Control** (远程控制) and enable the connection. Pick which entry the QR code should point at: public first (when a domain or node is configured) or LAN first.
-2. Scan the single QR code with your phone — both entries share one pairing ticket. Check the device shown on the computer and approve the pairing request.
-3. Open an existing session in your phone browser. To revoke access later, remove the phone from the authorized devices on your computer.
+1. Open **Remote Control** in the DSH sidebar on your computer and select **Enable Remote Control**. For your first connection, put both devices on the same Wi-Fi network.
+2. Scan the panel’s QR code with your phone. Check the device name on the computer and select **Allow connection**.
+3. Open an existing session in your phone browser. You can revoke access later from **Authorized devices** on the computer.
+
+Use the [public access instructions](#-connecting-from-another-network) when you need to connect from another network.
 
 <details>
 <summary><strong>Show the plugin panel</strong></summary>
@@ -67,6 +67,8 @@ dsh plugin --profile web add @winlin926/dsh-carry@latest
 <p align="center">Workspace tools · HTML preview · Settings</p>
 
 ## 🌐 Connecting from another network
+
+For the full setup, from registering a domain to connecting your phone, follow the [SakuraFrp public-access walkthrough (Chinese)](docs/public-access-sakura.md).
 
 With a fixed-domain HTTPS tunnel gateway (or the included `remote-server` relay), both entries are served by one listener and the QR code points at the priority you picked. When the public route dies while the phone is on the same network, the page switches to the LAN entry by itself and asks for no new scan; leaving the network is a manual step — open the public address the panel shows. During public pairing, compare the host fingerprint on both devices to confirm you have reached your computer.
 

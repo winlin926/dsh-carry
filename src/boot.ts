@@ -3,6 +3,8 @@ import { localFilePath } from './local-file.js'
 import { createBootScreen } from './boot-screen.js'
 import { remoteDirect } from './boot-direct.js'
 import { PREVIEW_WORKER_PATH } from './preview-worker.js'
+import { openRemoteFile } from './boot-file.js'
+import { createRemoteRuntime } from './remote-runtime.js'
 
 /** The same computer's LAN entry, injected only into a paired device's public page. */
 export interface LanFallback {
@@ -15,25 +17,33 @@ export interface LanFallback {
 }
 /** The direct line is offered per boot: its signaling route, and which line this phone prefers. */
 export interface BootDirect { signal: string; preference: 'lan' | 'public' }
-export interface BootContext { fallback?: LanFallback; direct?: BootDirect }
+export interface BootContext { fallback?: LanFallback; direct?: BootDirect; entry?: 'lan' | 'public'; version?: string }
 
-function remoteBoot(parseLocalFile: (href: string) => string | undefined, context: BootContext | null, createScreen: typeof createBootScreen, createLink: typeof remoteDirect, previewWorkerPath: string): void {
+function remoteBoot(parseLocalFile: (href: string) => string | undefined, context: BootContext | null, createScreen: typeof createBootScreen, createLink: typeof remoteDirect, previewWorkerPath: string, createRuntime: typeof createRemoteRuntime, openFile: typeof openRemoteFile): void {
   const globals = window as unknown as Record<string, any>
   globals.__DSH_REMOTE_CONTROL__ = true
+  const runtime = createRuntime(context?.entry, context?.version)
+  globals.__DSH_RC_CONNECTION__ = runtime.api
+  const language = (() => {
+    try {
+      const saved = window.localStorage?.getItem('dsh-rc-language')
+      if (saved === 'zh' || saved === 'en') return saved
+    } catch { /* storage is optional */ }
+    return navigator.language && !/^zh\b/i.test(navigator.language) ? 'en' : 'zh'
+  })()
+  const say = (zh: string, en: string): string => language === 'en' ? en : zh
   // The Host owns the document language, theme colour and keyboard policy since 0.2.2: a phone
   // gets its mobile layout from the Host itself. Only the browser's translate offer is ours to
   // refuse, because the app's own copy is what the reader is looking at.
   document.documentElement.setAttribute('translate', 'no')
-  let reconnecting = false
-  let pendingRoute = ''
   // A page reached through the same-host fallback says so once, then drops the marker from the address.
-  if (new URLSearchParams(location.search || '').get('rc') === 'lan') {
+  let announceLan = new URLSearchParams(location.search || '').get('rc') === 'lan'
+  if (announceLan) {
     try {
       const clean = new URL(location.href)
       clean.searchParams.delete('rc')
       window.history?.replaceState?.(null, '', clean.pathname + clean.search + clean.hash)
-    } catch { /* the notice still shows if the address cannot be rewritten */ }
-    connectionStatus('已切换到局域网')
+    } catch { /* The marker may stay if the address cannot be rewritten. */ }
   }
   const transport = globals.__DSH_TRANSPORT__ ?? {}
   globals.__DSH_TRANSPORT__ = transport
@@ -56,13 +66,6 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     onState: state => {
       if (state.line === currentRoute) return
       currentRoute = state.line
-      pendingRoute = currentRoute === 'direct' ? '已切换到局域网直连' : '已切换到公网'
-      if (currentRoute === 'direct' && !reconnecting) {
-        connectionStatus(pendingRoute)
-        pendingRoute = ''
-      } else {
-        showReconnect()
-      }
       setTimeout(moveSockets, 0)
     },
     log: (line: string) => { try { console.debug('[rc-direct] ' + line) } catch { /* a missing console is not a failure */ } },
@@ -138,12 +141,10 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
   /** Open computer files on the remote device instead of invoking the Desktop handler. */
   async function openLocalFile(href: string): Promise<void> {
     const path = parseLocalFile(href)
-    if (!path) { notice('链接不是本机文件路径。'); return }
+    if (!path) { notice(say('链接不是本机文件路径。', 'This is not a local file link.')); return }
+    const address = '/rc/workspace-file?p=' + encodeURIComponent(path)
     if (/\.html?$/i.test(path) || /\.svg$/i.test(path)) {
-      // Open immediately: awaiting a fetch first would lose the tap's popup permission.
-      // Both are documents; the gateway serves them under a sandbox CSP, so a blob URL
-      // (which would inherit the gateway origin and drop that header) is never used.
-      const address = '/rc/workspace-file?p=' + encodeURIComponent(path)
+      // These documents keep the gateway's sandbox CSP. A blob would drop that header.
       if (link?.line === 'direct' && navigator.serviceWorker?.controller) {
         const preview = window.open('about:blank', '_blank')
         if (preview) preview.opener = null
@@ -151,10 +152,10 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
           const response = await link.fetch(address + '&preview=1')
           const locationHeader = response.headers.get('location')
           const target = locationHeader && new URL(locationHeader, location.href)
-          if (response.status !== 303 || !target || target.origin !== location.origin || !target.pathname.startsWith('/rc/workspace-preview/')) throw new Error('预览不可用。')
+          if (response.status !== 303 || !target || target.origin !== location.origin || !target.pathname.startsWith('/rc/workspace-preview/')) throw new Error('Invalid preview')
           if (preview) preview.location.replace(target.href)
           else location.assign(target.href)
-        } catch { preview?.close(); notice('无法打开文件预览。') }
+        } catch { preview?.close(); notice(say('无法打开文件预览。', 'Could not open the file preview.')) }
         return
       }
       const preview = window.open(address, '_blank')
@@ -162,22 +163,7 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
       else location.assign(address)
       return
     }
-    try {
-      const response = await routedFetch('/rc/workspace-file?p=' + encodeURIComponent(path), { cache: 'no-store' })
-      if (!response.ok) {
-        const data = await response.json().catch(() => null)
-        notice((data as { error?: string } | null)?.error ?? `无法读取文件（HTTP ${response.status}）。`)
-        return
-      }
-      const objectUrl = URL.createObjectURL(await response.blob())
-      // A blob URL inherits the gateway origin, so the page opened from it must not hold a handle back.
-      const opened = window.open(objectUrl, '_blank')
-      if (opened) opened.opener = null
-      // A tap grants popup permission on real browsers; where it is withheld, fall back to
-      // navigating this tab — the file renders and the back button returns to the app.
-      else location.assign(objectUrl)
-      setTimeout(() => URL.revokeObjectURL(objectUrl), 120000)
-    } catch { notice('读取文件失败，请检查电脑上的远程连接。') }
+    await openFile(address, window.fetch, language)
   }
   document.addEventListener('click', event => {
     const target = event.target as Element | null
@@ -241,8 +227,14 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
   const registered = new Set<number>()
   const early: unknown[] = [], inFlight: string[] = []
   const timers: Record<string, ReturnType<typeof setTimeout> | undefined> = {}
-  let screen: ReturnType<typeof createScreen> | null = createScreen()
-  const VERDICT: Record<string, string> = { same: '插件清单未变化', changed: '插件清单有变化', first: '首次核对完成', unavailable: '已读取本次插件清单', unknown: '无法核对插件变化' }
+  let screen: ReturnType<typeof createScreen> | null = createScreen(language)
+  const VERDICT: Record<string, string> = {
+    same: say('插件清单未变化', 'Plugin list unchanged'),
+    changed: say('插件清单有变化', 'Plugin list changed'),
+    first: say('首次核对完成', 'Plugin list checked for the first time'),
+    unavailable: say('已读取本次插件清单', 'Current plugin list loaded'),
+    unknown: say('无法核对插件变化', 'Could not check plugin changes'),
+  }
   let graph: Graph | null = null, check: 'pending' | 'same' | 'changed' | 'first' | 'unavailable' | 'unknown' = 'pending'
   let counting: 'unknown' | 'watching' | 'absent' = 'unknown', wrapped = false, completed = false
   let recent: number[] = [], newest = -1, shownCheck = '', holdingVerdict = false
@@ -278,15 +270,15 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     registered.add(at); recent.push(at); scheduleProgress()
   }
   const moduleName = (id: string): string => ({
-    '@deepseek-ai/dsh-client-connection': '连接服务',
-    '@deepseek-ai/dsh-client-ui-settings': '界面设置',
-    '@deepseek-ai/dsh-client-ui-sidebar': '会话侧栏',
-    '@deepseek-ai/dsh-client-ui-theme': '界面主题',
+    '@deepseek-ai/dsh-client-connection': say('连接服务', 'Connection service'),
+    '@deepseek-ai/dsh-client-ui-settings': say('界面设置', 'Settings'),
+    '@deepseek-ai/dsh-client-ui-sidebar': say('会话侧栏', 'Conversation sidebar'),
+    '@deepseek-ai/dsh-client-ui-theme': say('界面主题', 'Theme'),
   }[id] ?? id.replace(/^@[^/]+\//, '').replace(/^dsh-client-/, '').replace(/-/g, ' '))
   const inFlightName = (): string => {
     if (!graph) return ''
-    for (const url of inFlight) for (const at of batchAt.get(url) ?? (singleAt.has(url) ? [singleAt.get(url)!] : [])) if (!registered.has(at)) return '正在准备：' + moduleName(graph.entries[at]!.id)
-    return newest < 0 ? '' : '刚完成：' + moduleName(graph.entries[newest]!.id)
+    for (const url of inFlight) for (const at of batchAt.get(url) ?? (singleAt.has(url) ? [singleAt.get(url)!] : [])) if (!registered.has(at)) return say('正在准备：', 'Preparing: ') + moduleName(graph.entries[at]!.id)
+    return newest < 0 ? '' : say('刚完成：', 'Loaded: ') + moduleName(graph.entries[newest]!.id)
   }
   const adopt = (snapshot: Graph | null): void => {
     if (!snapshot || graph) return
@@ -314,20 +306,25 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     const total = graph?.entries.length ?? 0, counted = counting === 'watching' && total > 0
     const done = registered.size, settled = check !== 'pending'
     const holding = settled && (shownCheck !== check || holdingVerdict)
+    const moduleCount = total ? say(`共 ${total} 个模块`, `${total} modules`) : say('无需加载模块', 'No modules to load')
+    const verdict = VERDICT[check] ?? VERDICT.unknown!
     let stage = '', count = '', detail = ''
     if (completed) {
-      stage = '✓ 启动完成'; detail = '工作区已就绪'
+      stage = say('✓ 启动完成', '✓ Startup complete'); detail = say('工作区已就绪', 'Workspace ready')
     } else if (phase === 'loading' || phase === 'initializing') {
-      stage = phase === 'loading' ? '正在加载模块' : '正在初始化插件'
-      if (counted) count = done + ' / ' + total + ' 个模块'
-      else if (graph) count = '共 ' + total + ' 个模块'
-      if (!settled) detail = '正在检查插件变化…'
-      else if (holding) detail = VERDICT[check] ?? '无法核对插件变化'
+      stage = phase === 'loading' ? say('正在加载模块', 'Loading modules') : say('正在初始化插件', 'Initializing plugins')
+      if (counted) count = say(`${done} / ${total} 个模块`, `${done} / ${total} modules`)
+      else if (graph) count = moduleCount
+      if (!settled) detail = say('正在检查插件变化…', 'Checking for plugin changes…')
+      else if (holding) detail = verdict
       else if (phase === 'loading') detail = inFlightName()
-      else detail = '正在接管工作区…'
-    } else if (!settled) { stage = '正在检查插件变化…'; detail = '正在读取插件清单…'; if (graph) count = total ? '共 ' + total + ' 个模块' : '无需加载模块' }
-    else { stage = VERDICT[check] ?? '无法核对插件变化'; if (graph) count = total ? '共 ' + total + ' 个模块' : '无需加载模块' }
-    const announcement = !completed && holding && VERDICT[check] !== stage ? VERDICT[check] + '。' + stage : stage
+      else detail = say('正在接管工作区…', 'Opening the workspace…')
+    } else if (!settled) {
+      stage = say('正在检查插件变化…', 'Checking for plugin changes…')
+      detail = say('正在读取插件清单…', 'Reading the plugin list…')
+      if (graph) count = moduleCount
+    } else { stage = verdict; if (graph) count = moduleCount }
+    const announcement = !completed && holding && verdict !== stage ? verdict + say('。', '. ') + stage : stage
     screen.paint({ stage, count, detail, complete: completed, announcement,
       progress: completed || (graph && !total) ? null : counted && (phase === 'loading' || phase === 'initializing') ? done / total : 'pending' })
     if (settled && shownCheck !== check) {
@@ -393,11 +390,12 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
       status = node('div', '', (boot.firstElementChild ?? boot) as HTMLElement)
       status.dataset.dshRcBootStatus = ''
       status.style.cssText = 'margin:12px auto 0;text-align:center;opacity:.8'
-      status.textContent = '启动失败，请查看上方错误。'
+      status.textContent = say('启动失败，请查看上方错误。', 'Startup failed. See the error above.')
     }
     status.setAttribute('role', 'alert')
+    status.setAttribute('lang', say('zh-CN', 'en'))
     const retry = node('button', '', status) as HTMLButtonElement
-    retry.textContent = '重新加载'
+    retry.textContent = say('重新加载', 'Reload')
     retry.style.cssText = 'margin:12px auto 0;padding:8px 16px;border:1px solid currentColor;border-radius:999px;background:none;color:inherit'
     retry.onclick = () => { retry.disabled = true; location.reload() }
   }
@@ -462,7 +460,7 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
   window.addEventListener('unhandledrejection', () => { recordError('unhandled-rejection') })
   updateBoot()
   scheduleReport(8000)
-  function disconnected(title: string, canRetry = false): void {
+  function disconnected(title: string, identityMismatch = false): void {
     if (document.getElementById('dsh-rc-disconnected')) return
     connectionStatus('')
     const dialog = document.createElement('dialog')
@@ -503,13 +501,16 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     heading.textContent = title
     const instructions = document.createElement('p')
     instructions.id = 'dsh-rc-disconnected-text'
-    instructions.textContent = '在电脑上打开 DSH 的「远程控制」，用手机扫描新的二维码，并在电脑上确认。'
+    dialog.setAttribute('lang', say('zh-CN', 'en'))
+    instructions.textContent = identityMismatch
+      ? say('请在电脑上核对入口与指纹，从远程控制面板扫描新的二维码。', 'Check the entry address and fingerprint on the computer, then scan a new QR code from Remote Control.')
+      : say('在电脑上打开 DSH 的「远程控制」，用手机扫描新的二维码，并在电脑上确认。', 'Open Remote Control in DSH on the computer, scan a new QR code, and approve the request.')
     dialog.append(style, heading, instructions)
-    if (canRetry) {
+    if (identityMismatch) {
       const retry = document.createElement('button')
       retry.type = 'button'
-      retry.textContent = '重试当前入口'
-      retry.onclick = () => location.reload()
+      retry.textContent = say('重试当前入口', 'Retry this entry')
+      retry.onclick = () => { if (!runtime.retry()) location.reload() }
       dialog.append(retry)
     }
     ;(document.body ?? document.documentElement).append(dialog)
@@ -520,6 +521,7 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     if (!message || document.getElementById('dsh-rc-disconnected')) return
     const bar = document.createElement('div')
     bar.id = 'dsh-rc-connection-status'
+    bar.setAttribute('lang', say('zh-CN', 'en'))
     const style = document.createElement('style')
     style.textContent = `
 #dsh-rc-connection-status {
@@ -572,69 +574,98 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
       button.type = 'button'
       button.className = 'connection-line'
       button.textContent = message
-      button.title = '重试连接电脑'
-      button.setAttribute('aria-label', '正在重新连接，点击重试')
-      button.onclick = () => location.reload()
+      button.title = say('重试连接电脑', 'Retry the connection')
+      button.setAttribute('aria-label', say('正在重新连接，点击重试', 'Reconnecting. Retry the connection'))
+      button.onclick = () => { if (!runtime.retry()) location.reload() }
       bar.append(button)
     } else {
       status.className = 'connection-line'
     }
     bar.append(status)
     ;(document.body ?? document.documentElement).append(bar)
-    status.textContent = retry ? '正在重新连接电脑…' : message
+    status.textContent = message === say('正在重新连接…', 'Reconnecting…') ? say('正在重新连接电脑…', 'Reconnecting to the computer…') : message
     if (!retry) setTimeout(() => bar.remove(), 2600)
   }
-  function showReconnect(): void {
-    if (reconnecting) return
-    reconnecting = true
-    connectionStatus('正在重新连接…', true)
-  }
-  /** A public entry that dies must not strand the phone on a dead page. */
-  const lanFallback = context?.fallback
   let fallbackTried = false
   let fallbackTimer: ReturnType<typeof setTimeout> | undefined
-  const rescan = (): void => disconnected('暂时无法切换到局域网', true)
-  /**
-   * Offered only when this same gateway answers that the LAN entry is the same Host, and the answer
-   * must carry the identity this page was given. Anything else asks for a fresh QR code instead of
-   * navigating to some other computer. The address itself is checked too, so a forged `url` is inert.
-   */
+  let fallbackCheck: AbortController | undefined
+  const lanFallback = context?.fallback
+  const revoke = () => {
+    if (runtime.api.getSnapshot().phase === 'blocked') return
+    runtime.report('unpaired')
+    document.getElementById('dsh-rc-disconnected')?.remove()
+    disconnected(say('设备授权已失效', 'Device access expired'))
+  }
+  // Only navigate to the same Host, on the LAN origin embedded in this authenticated boot.
   async function switchToLan(): Promise<void> {
-    if (!lanFallback || fallbackTried) return
+    if (!lanFallback || fallbackTried || runtime.api.getSnapshot().phase !== 'reconnecting') return
     fallbackTried = true
+    const check = fallbackCheck = new AbortController()
+    const timeout = setTimeout(() => check.abort(), 6000)
     try {
-      const response = await originalFetch('/rc/fallback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
-      const data = await response.json().catch(() => null) as { sameHost?: unknown; url?: unknown; node?: unknown; hostId?: unknown; fingerprint?: unknown } | null
+      const response = await originalFetch('/rc/fallback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', signal: check.signal })
+      if (fallbackCheck !== check) return
+      if (await unpaired(response)) { if (fallbackCheck === check) revoke(); return }
+      const data = await response.json().catch(() => null) as { sameHost?: unknown; url?: unknown; node?: unknown; hostId?: unknown; fingerprint?: unknown; reason?: unknown } | null
+      if (fallbackCheck !== check) return
+      if (!response.ok || (data?.sameHost !== true && data?.reason !== 'identity')) { runtime.report('lan-unavailable'); return }
       const target = typeof data?.url === 'string' ? data.url : ''
-      // Protocol 2 names the node identity; protocol 1 names the same identity as two flat fields.
       const answerNode = data?.node && typeof data.node === 'object' && !Array.isArray(data.node) ? data.node as Record<string, unknown> : null
       const answer = answerNode && typeof answerNode.id === 'string' && typeof answerNode.fingerprint === 'string'
         ? { id: answerNode.id, fingerprint: answerNode.fingerprint }
         : typeof data?.hostId === 'string' && typeof data?.fingerprint === 'string' ? { id: data.hostId, fingerprint: data.fingerprint } : null
       const expected = lanFallback.node ?? (lanFallback.hostId !== null && lanFallback.fingerprint !== null ? { id: lanFallback.hostId, fingerprint: lanFallback.fingerprint } : null)
-      let same = false
-      try {
-        const wanted = new URL(lanFallback.url), found = new URL(target)
-        same = data?.sameHost === true && expected !== null && answer !== null && answer.id === expected.id && answer.fingerprint === expected.fingerprint && found.origin === wanted.origin && found.protocol === wanted.protocol
-      } catch { same = false }
-      if (!same) { rescan(); return }
-      location.replace(new URL('/?rc=lan', target).href)
-    } catch { rescan() }
+      const sameOrigin = (() => { try { return new URL(target).origin === new URL(lanFallback.url).origin } catch { return false } })()
+      if (data?.sameHost === true && expected && answer?.id === expected.id && answer.fingerprint === expected.fingerprint && sameOrigin) {
+        location.replace(new URL('/?rc=lan', target).href)
+      } else {
+        runtime.report('identity-mismatch')
+        disconnected(say('局域网入口的主机身份不匹配', 'LAN entry belongs to a different host'), true)
+      }
+    } catch {
+      if (fallbackCheck === check) runtime.report('lan-unavailable')
+    } finally {
+      clearTimeout(timeout)
+      if (fallbackCheck === check) fallbackCheck = undefined
+    }
   }
-  window.addEventListener('dsh-rc-offline', () => {
-    showReconnect()
-    if (link) { link.invalidateUpstream(); void link.probe(); return }
-    if (!lanFallback || fallbackTried) return
-    // One short grace period: a reconnect that succeeds clears this timer.
-    clearTimeout(fallbackTimer)
-    fallbackTimer = setTimeout(() => { void switchToLan() }, 1500)
+  let lastRoute: 'lan' | 'public' | 'direct' | undefined
+  let lastMessage = ''
+  runtime.api.subscribe(() => {
+    const { phase, route, reason } = runtime.api.getSnapshot()
+    if (phase === 'connected' || phase === 'blocked') {
+      clearTimeout(fallbackTimer); fallbackTimer = undefined
+      const check = fallbackCheck
+      fallbackCheck = undefined
+      check?.abort()
+      if (phase === 'connected') {
+        fallbackTried = false
+        document.getElementById('dsh-rc-disconnected')?.remove()
+        const changed = route && lastRoute && route !== lastRoute
+        if (announceLan) { announceLan = false; connectionStatus(say('已切换到局域网', 'Switched to the local network')) }
+        else if (changed) {
+          if (route === 'direct') connectionStatus(say('已切换到局域网直连', 'Switched to a direct LAN connection'))
+          else if (route === 'public') connectionStatus(say('已切换到公网', 'Switched to the public entry'))
+          else connectionStatus(say('已切换到局域网', 'Switched to the local network'))
+        } else if (lastMessage) connectionStatus('')
+        lastRoute = route
+      }
+      lastMessage = ''
+      return
+    }
+    if (phase !== 'reconnecting') return
+    const message = reason === 'lan-unavailable'
+      ? say('局域网暂不可用，点击重试当前连接', 'LAN unavailable. Retry this connection')
+      : say('正在重新连接…', 'Reconnecting…')
+    if (message !== lastMessage) { lastMessage = message; connectionStatus(message, true) }
   })
-  window.addEventListener('dsh-rc-online', () => {
-    clearTimeout(fallbackTimer)
-    if (!reconnecting) return
-    reconnecting = false
-    connectionStatus(pendingRoute)
-    pendingRoute = ''
+  window.addEventListener('dsh-rc-offline', () => {
+    runtime.report('network')
+    if (link) { link.invalidateUpstream(); void link.probe(); return }
+    if (lanFallback && !fallbackTried && fallbackTimer === undefined && runtime.api.getSnapshot().phase === 'reconnecting') {
+      // Give the Host's current reconnect attempt a chance to finish.
+      fallbackTimer = setTimeout(() => { fallbackTimer = undefined; void switchToLan() }, 1500)
+    }
   })
 
   /** The gateway's own refusal. A 403 from the Host (a path it will not read, say) is an ordinary error. */
@@ -644,17 +675,24 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
   }
   window.fetch = async (...args) => {
     const response = await routedFetch(args[0], args[1])
-    if (new URL(String(args[0] instanceof Request ? args[0].url : args[0]), location.href).origin === location.origin && await unpaired(response)) disconnected('设备授权已失效')
+    if (new URL(String(args[0] instanceof Request ? args[0].url : args[0]), location.href).origin === location.origin && await unpaired(response)) revoke()
     return response
   }
   const OriginalSocket = window.WebSocket
-  /** One revocation probe at a time: a phone that reconnects in a loop closes faster than the Host answers. */
+  /** One authorization check per outage, only when a Host session socket was previously open. */
   let probing: Promise<unknown> | undefined
   const probeAuthorization = (): void => {
-    if (probing) return
+    if (probing || runtime.api.getSnapshot().phase === 'blocked') return
     probing = originalFetch('/api/dsh-remote-connect/manage', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'status' }) }).then(async response => {
-      if (await unpaired(response)) disconnected('设备授权已失效')
+      if (await unpaired(response)) revoke()
+      else if ([502, 503, 504].includes(response.status)) runtime.report('host-unavailable')
     }).catch(() => window.dispatchEvent(new Event('dsh-rc-offline'))).finally(() => { probing = undefined })
+  }
+  const watchMux = (socket: Pick<WebSocket, 'addEventListener'>, route: 'lan' | 'public' | 'direct' | undefined) => {
+    runtime.observeMux(socket, route)
+    let opened = false
+    socket.addEventListener('open', () => { opened = true })
+    socket.addEventListener('close', () => { if (opened) probeAuthorization() })
   }
   // Sockets that opened before the direct line was usable: when it becomes usable they are closed
   // so the app's own reconnect logic opens them again on the direct channel. Without this the
@@ -670,20 +708,16 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
       // A same-origin socket rides the direct line while it is up; anything else is a plain socket.
       const target = new URL(String(url), location.href)
       const localSocket = target.host === location.host && (target.protocol === 'wss:' ? location.protocol === 'https:' : target.protocol === 'ws:' ? location.protocol === 'http:' : target.origin === location.origin)
+      const mux = localSocket && target.pathname === '/api/remote.mux'
       if (link?.line === 'direct' && localSocket) {
         const socket = link.socket(String(url), protocols)
-        socket.addEventListener('open', () => window.dispatchEvent(new Event('dsh-rc-online')))
+        if (mux) watchMux(socket, 'direct')
         return socket as unknown as WebSocket
       }
       super(url, protocols)
       if (localSocket) upstream.add(this as unknown as WebSocket)
       this.addEventListener('close', () => { upstream.delete(this as unknown as WebSocket) })
-      // Only a socket that reached the Host says anything about the authorization, and the SSE
-      // carrier reconnects by design, so probing it would be a heartbeat request of its own.
-      const carrier = /\/rc\/sse(?:[?#]|$)/.test(String(url))
-      let opened = false
-      this.addEventListener('open', () => { opened = true; window.dispatchEvent(new Event('dsh-rc-online')) })
-      this.addEventListener('close', () => { if (opened && !carrier) probeAuthorization() })
+      if (mux) watchMux(this, context?.entry)
     }
   }
   if (!crypto.randomUUID) Object.defineProperty(crypto, 'randomUUID', { value: () => '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c => (Number(c) ^ crypto.getRandomValues(new Uint8Array(1))[0]! & 15 >> Number(c) / 4).toString(16)), writable: true, configurable: true })
@@ -721,7 +755,6 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
         const frame = JSON.parse(event.data)
         if (frame.type === 'ready') {
           this.readyState = 1; this.backoff = 0
-          window.dispatchEvent(new Event('dsh-rc-online'))
           this.emit('open', new Event('open')); return
         }
         if (frame.type === 'error') { this.close(); this.emit('error', new Event('error')); return }
@@ -753,7 +786,7 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
 }
 /** The Host reads this same string every request, so it stays one self-contained function. */
 export function bootScript(context?: BootContext): string {
-  return `(${remoteBoot.toString()})(${localFilePath.toString()},${JSON.stringify(context ?? null)},${createBootScreen.toString()},${remoteDirect.toString()},${JSON.stringify(PREVIEW_WORKER_PATH)});`
+  return `(${remoteBoot.toString()})(${localFilePath.toString()},${JSON.stringify(context ?? null)},${createBootScreen.toString()},${remoteDirect.toString()},${JSON.stringify(PREVIEW_WORKER_PATH)},${createRemoteRuntime.toString()},${openRemoteFile.toString()});`
 }
 /** The boot script is a same-origin file, not an inline script, so a Host CSP cannot block it. */
 export const BOOT_PATH = '/rc/boot.js'

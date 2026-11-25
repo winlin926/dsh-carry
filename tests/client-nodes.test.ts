@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   WAYS,
+  apply,
   checkedAtLabel,
+  clientText,
   command,
   nodeCheckStatus,
   nodeFingerprintGroups,
@@ -11,6 +13,7 @@ import {
   parsePublicNodeAddress,
   publicNodeFingerprint,
   publicNodeProtocolLabel,
+  remoteDiagnostics,
   serviceStateLabel,
   sortPublicNodes,
   watchLocalPairings,
@@ -267,6 +270,49 @@ describe('sidebar pairing approvals', () => {
       expect(check).toHaveBeenCalledTimes(3)
       expect(vi.getTimerCount()).toBe(0)
     } finally { vi.unstubAllGlobals(); vi.useRealTimers() }
+  })
+})
+
+describe('remote panel', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('uses the Host language, falling back to the document then the browser', () => {
+    const doc = { documentElement: { lang: 'zh-CN' } }
+    vi.stubGlobal('document', doc)
+    vi.stubGlobal('navigator', { language: 'en-US' })
+    expect(clientText(undefined, '远程控制', 'Remote Control')).toBe('远程控制')
+    expect(clientText({ resolveText: words => words.en }, '远程控制', 'Remote Control')).toBe('Remote Control')
+    doc.documentElement.lang = ''
+    expect(clientText(undefined, '远程控制', 'Remote Control')).toBe('Remote Control')
+  })
+
+  it('binds the Host session connection on the remote page and returns its cleanup', () => {
+    const unbind = vi.fn()
+    const bindConnection = vi.fn(() => unbind)
+    const page = { __DSH_REMOTE_CONTROL__: false, __DSH_RC_CONNECTION__: { bindConnection } }
+    vi.stubGlobal('window', page)
+    const connection = {
+      state: { getSnapshot: () => 'connected', subscribe: () => unbind },
+      generation: { getSnapshot: () => ({}), subscribe: () => unbind },
+      reconnect: vi.fn(),
+    }
+    const effect = vi.fn<Parameters<typeof apply>[0]['effect']>()
+    apply({ effect, connection, slots: { inject: vi.fn(), register: vi.fn() } })
+    const bind = effect.mock.calls.find(([, label]) => label === 'remote-control connection')![0]
+    expect(bind()).toBeUndefined()
+    expect(bindConnection).not.toHaveBeenCalled()
+    page.__DSH_REMOTE_CONTROL__ = true
+    expect(bind()).toBe(unbind)
+    expect(bindConnection).toHaveBeenCalledExactlyOnceWith(connection)
+    expect(connection.reconnect).not.toHaveBeenCalled()
+  })
+
+  it('copies only valid diagnostic data and keeps entry distinct from active route', () => {
+    const safe = { version: '0.7.0', entry: 'public', route: 'direct', phase: 'connected', durationMs: 40 } as const
+    const extra = { url: 'https://private.example', fingerprint: FINGERPRINT, ticket: 'pair-1', cookie: 'session' }
+    expect(JSON.parse(remoteDiagnostics({ ...safe, ...extra }))).toEqual(safe)
+    const malformed = { ...extra, version: extra.ticket, entry: extra.url, route: extra.url, phase: 'reconnecting', reason: extra.fingerprint, durationMs: Infinity }
+    expect(JSON.parse(remoteDiagnostics(malformed as Parameters<typeof remoteDiagnostics>[0]))).toEqual({ phase: 'reconnecting' })
   })
 })
 

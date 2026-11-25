@@ -11,6 +11,14 @@ const matches = (value: string, expected: string) => {
 export const IDLE_MS = 30 * 24 * 3600_000
 /** The entry a device was paired through. A public entry needs both ends' confirmation. */
 export type PairingEntry = 'lan' | 'public'
+
+export class PairingError extends Error {
+  constructor(readonly code: 'qr_invalid' | 'claim_invalid' | 'pairing_busy', message: string) {
+    super(message)
+    this.name = 'PairingError'
+  }
+}
+
 export interface Device {
   id: string; name: string; createdAt: number; lastSeenAt: number; hash: string
   /** The address the device paired through, shown in the panel; the browser scopes its cookie to that origin. */
@@ -124,8 +132,8 @@ export class PairingService {
   invalidate(): void { this.token = undefined; this.pending.clear() }
   request(token: string, userAgent: string, host?: string, model?: string, via: PairingEntry = 'lan', nodeConfirmed = false): { id: string; key: string; expiresAt: number } {
     this.expire()
-    if (!this.token || this.now() >= this.token.expiresAt || !matches(token, this.token.hash)) throw new Error('二维码已过期或已刷新，请重新扫码。')
-    if (this.outstanding() >= 16) throw new Error('等待配对的设备过多，请稍后再试。')
+    if (!this.token || this.now() >= this.token.expiresAt || !matches(token, this.token.hash)) throw new PairingError('qr_invalid', '二维码已过期或已刷新，请重新扫码。')
+    if (this.outstanding() >= 16) throw new PairingError('pairing_busy', '等待配对的设备过多，请稍后再试。')
     const id = randomUUID(), key = random(), expiresAt = Math.min(this.now() + 5 * 60_000, this.token.expiresAt)
     this.pending.set(id, { id, name: deviceName(userAgent, model), host: host?.toLowerCase(), via, expiresAt, keyHash: hash(key), state: 'pending', nodeConfirmed: via === 'lan' || nodeConfirmed })
     this.failureState = undefined
@@ -177,7 +185,7 @@ export class PairingService {
   claim(id: string, key: string): { state: 'pending' | 'approved' | 'rejected'; credential?: string } {
     this.expire()
     const claim = this.pending.get(id)
-    if (!claim || !matches(key, claim.keyHash)) throw new Error('配对请求已失效。')
+    if (!claim || !matches(key, claim.keyHash)) throw new PairingError('claim_invalid', '配对请求已失效。')
     const result = { state: claim.state, credential: claim.credential }
     if (claim.state === 'approved') claim.collected = true
     else if (claim.state === 'rejected') this.pending.delete(id)

@@ -2,10 +2,12 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { test } from 'node:test'
+import { runInNewContext } from 'node:vm'
 import { ApiError } from '../dist/remote-server/src/errors.js'
 import {
   api,
   completePairing,
+  hostIdentityFromKey,
   hostRegistration,
   parseSetCookie,
   randomDeviceId,
@@ -365,4 +367,87 @@ test('the pairing page never renders the eight-digit comparison code', async () 
   assert.match(html, /hostIdentityKey/u)
   assert.match(html, /crypto\.subtle\.digest\('SHA-256'/u)
   assert.match(html, /fromB64url/u)
+})
+
+test('the relay page accepts a real QR key and checks an interrupted decision without replaying it', async () => {
+  const html = await readFile(new URL('../web/index.html', import.meta.url), 'utf8')
+  const script = /<script>([\s\S]*?)<\/script>/u.exec(html)?.[1]
+  assert.ok(script)
+  const key = randomIdentityKey()
+  const host = hostIdentityFromKey(key)
+  const ticket = randomToken()
+  const claimPath = '/v1/pairings/claim'
+  const statusPath = '/v1/pairings/test-request'
+  const confirmPath = `${statusPath}/confirm`
+
+  for (const outcome of ['complete', 'expired', 'rejected'] as const) {
+    let now = 1_000_000
+    const expiresAt = now + 5_000
+    let timerId = 0
+    const timers = new Set<number>()
+    const elements = new Map<string, { textContent: string; disabled: boolean; hidden: boolean; onclick?: () => void }>()
+    const get = (id: string) => {
+      if (!elements.has(id)) elements.set(id, { textContent: '', disabled: false, hidden: false })
+      return elements.get(id)!
+    }
+    const document = Object.assign(new EventTarget(), {
+      documentElement: { lang: '' }, hidden: false, getElementById: get, querySelectorAll: () => [],
+    })
+    const window = new EventTarget()
+    const location = { hash: `#v=1&ticket=${ticket}&key=${key}`, pathname: '/pair', search: '', replace: (path: string) => { opened = path } }
+    const calls: string[] = []
+    let opened = ''
+    await runInNewContext(script, {
+      document, window, location, URLSearchParams, AbortController, crypto, atob, btoa,
+      navigator: { language: 'en-US' },
+      history: { replaceState: () => { location.hash = '' } },
+      localStorage: { getItem: () => null, setItem: () => {} },
+      Date: class extends Date { static now() { return now } },
+      setTimeout: () => { timers.add(++timerId); return timerId },
+      clearTimeout: (id: number) => timers.delete(id),
+      fetch: async (path: string, options: RequestInit) => {
+        calls.push(path)
+        if (path === '/v1/config') return Response.json({ name: 'Test relay', kind: 'service' })
+        if (path === claimPath) {
+          assert.equal(JSON.parse(String(options.body)).ticket, ticket)
+          return Response.json({ requestId: 'test-request', pairingToken: randomToken(), host, expiresAt })
+        }
+        if (path === confirmPath) throw new TypeError('network interrupted')
+        if (path === statusPath) return Response.json({ requestId: 'test-request', state: outcome === 'expired' ? 'pending' : outcome, complete: outcome === 'complete' })
+        if (path === '/v1/hosts') return Response.json({ hosts: [host] })
+        throw new Error(`Unexpected request ${path}`)
+      },
+    })
+    const flush = () => new Promise<void>(resolve => setImmediate(resolve))
+    assert.equal(location.hash, '')
+    assert.equal(document.documentElement.lang, 'en')
+    assert.equal(get('host-fp').textContent.replace(/-/g, '').toLowerCase(), host.fingerprint)
+    assert.equal(get('approve').disabled, false)
+    assert.equal(timers.size, 1)
+
+    get('language').onclick?.()
+    assert.equal(document.documentElement.lang, 'zh-CN')
+    get('approve').onclick?.()
+    await flush()
+    assert.equal(get('retry').hidden, false)
+    assert.match(get('status').textContent, /暂时无法获取结果/u)
+
+    document.hidden = true
+    document.dispatchEvent(new Event('visibilitychange'))
+    window.dispatchEvent(new Event('online'))
+    assert.deepEqual(calls, ['/v1/config', claimPath, confirmPath])
+    assert.equal(timers.size, 0)
+
+    if (outcome === 'expired') now = expiresAt
+    document.hidden = false
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flush()
+    assert.deepEqual(calls, ['/v1/config', claimPath, confirmPath, statusPath, ...(outcome === 'complete' ? ['/v1/hosts'] : [])])
+    assert.equal(opened, outcome === 'complete' ? '/' : '')
+    assert.equal(get('approve').disabled, true)
+    assert.equal(get('retry').hidden, true)
+    if (outcome === 'expired') assert.match(get('status').textContent, /已失效/u)
+    if (outcome === 'rejected') assert.match(get('status').textContent, /已被拒绝/u)
+    assert.equal(timers.size, 0)
+  }
 })
