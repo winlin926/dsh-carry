@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   WAYS,
@@ -21,7 +21,9 @@ import {
 } from '../src/client/index.js'
 import type { PublicNode } from '../src/client/index.js'
 
-const SOURCE = readFileSync(new URL('../src/client/index.ts', import.meta.url), 'utf8')
+const CLIENT_DIR = new URL('../src/client/', import.meta.url)
+const SOURCE = readdirSync(CLIENT_DIR).filter((name) => name.endsWith('.ts')).sort()
+  .map((name) => readFileSync(new URL(name, CLIENT_DIR), 'utf8')).join('\n')
 const FINGERPRINT = 'e5029063f54829c639dac06e7a3de8cd'
 const OTHER_FINGERPRINT = '0f1e2d3c4b5a69788796a5b4c3d2e1f0'
 const makeNode = (overrides: Partial<PublicNode> = {}): PublicNode => ({

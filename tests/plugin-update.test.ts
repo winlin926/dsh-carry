@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   PluginUpdate,
@@ -13,7 +13,9 @@ import {
 } from '../src/client/plugin-update.js'
 
 const NAME = '@winlin926/dsh-carry'
-const SOURCE = readFileSync(new URL('../src/client/index.ts', import.meta.url), 'utf8')
+const CLIENT_DIR = new URL('../src/client/', import.meta.url)
+const SOURCE = readdirSync(CLIENT_DIR).filter((name) => name.endsWith('.ts')).sort()
+  .map((name) => readFileSync(new URL(name, CLIENT_DIR), 'utf8')).join('\n')
 const bundle = (overrides: Partial<UpdateBundle> = {}): UpdateBundle => ({ name: NAME, installed: true, enabled: true, version: '0.6.0', update: 'registry', ...overrides })
 const listed = (versions: Array<Record<string, unknown>>, installed = '0.6.0'): UpdateVersionList => ({
   status: 'listed', installed, registry: 'https://registry.npmjs.org', versions: versions.map(item => ({ version: '0.9.9', prerelease: false, bundle: true, ...item })) as never, omitted: 0,
