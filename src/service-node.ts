@@ -14,6 +14,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { request as httpRequest, type ClientRequest, type IncomingMessage } from 'node:http'
 import { dirname, join } from 'node:path'
 import type { RawData, WebSocket as TunnelSocket } from 'ws'
+import { NODE_API, type HostRegistration } from './remote/node-api.js'
 import {
   TUNNEL_BACKPRESSURE_HIGH_WATER, TUNNEL_BACKPRESSURE_LOW_WATER, TUNNEL_HEARTBEAT_INTERVAL_MS, TUNNEL_HEARTBEAT_TIMEOUT_MS,
   TUNNEL_IDLE_TIMEOUT_MS, TUNNEL_MAX_REQUESTS_PER_HOST, TUNNEL_PATH, TUNNEL_REQUEST_TIMEOUT_MS, TunnelFrameError,
@@ -226,7 +227,7 @@ export async function forgetServiceNode(storage: string, origin: string): Promis
 async function deleteHostRegistration(origin: string, hostId: string, credential: string): Promise<void> {
   let response: Response
   try {
-    response = await fetch(`${origin}/v1/hosts/${encodeURIComponent(hostId)}`, {
+    response = await fetch(`${origin}${NODE_API.host.url({ hostId })}`, {
       method: 'DELETE',
       headers: { authorization: `Bearer ${credential}` },
       signal: AbortSignal.timeout(REGISTER_TIMEOUT_MS),
@@ -380,7 +381,7 @@ export class ServiceNode {
       const credential = await this.ensureCredential()
       let response: Response
       try {
-        response = await fetch(`${this.origin}/v1/pairings`, {
+        response = await fetch(`${this.origin}${NODE_API.pairings.url()}`, {
           method: 'POST',
           headers: { authorization: `Bearer ${credential}`, 'content-type': 'application/json' },
           body: '{}',
@@ -569,10 +570,10 @@ export class ServiceNode {
   private async register(): Promise<string> {
     let response: Response
     try {
-      response = await fetch(`${this.origin}/v1/hosts`, {
+      response = await fetch(`${this.origin}${NODE_API.hosts.url()}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ deviceId: this.hostId, name: REGISTER_NAME, identityKey: this.identityKey, clientVersion: this.clientVersion }),
+        body: JSON.stringify({ deviceId: this.hostId, name: REGISTER_NAME, identityKey: this.identityKey, clientVersion: this.clientVersion } satisfies HostRegistration),
         signal: AbortSignal.timeout(REGISTER_TIMEOUT_MS),
       })
     } catch (failure) {

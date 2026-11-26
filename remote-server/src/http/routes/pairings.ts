@@ -4,6 +4,7 @@ import { ApiError, rateLimited } from '../../errors.js'
 import { canonicalOrigin, serializeCookie } from '../../security.js'
 import type { AppServices } from '../../services.js'
 import type { Router } from '../router.js'
+import { NODE_API, type PairingTicketRequest, type PairingTicketResult } from '../../../../src/remote/node-api.js'
 import { readJsonBody, sendJson } from '../util.js'
 
 const PAIRING_TOKEN_HEADER = 'x-pairing-token'
@@ -40,11 +41,11 @@ function cookieHeaders(cookie: { token: string; expiresAt: number } | null): Rec
 export function registerPairingRoutes(router: Router, services: AppServices): void {
   const { config, pairing, auth, limiter, logger } = services
 
-  router.add('POST', '/v1/pairings', async ctx => {
+  router.add('POST', NODE_API.pairings.pattern, async ctx => {
     const host = auth.authenticateHostRequest(ctx.req)
     const decision = limiter.take('pairing-create', host.host_id, config.limits.pairingCreate)
     if (!decision.allowed) throw rateLimited(decision.retryAfterMs)
-    let input: { ticket?: string; expiresAt?: number } = {}
+    let input: PairingTicketRequest = {}
     const hasBody =
       Number(ctx.req.headers['content-length'] ?? '0') > 0 ||
       ctx.req.headers['transfer-encoding'] !== undefined
@@ -60,12 +61,12 @@ export function registerPairingRoutes(router: Router, services: AppServices): vo
     sendJson(
       ctx.res,
       201,
-      { ticket: ticket.ticket, expiresAt: ticket.expiresAt, host: pairing.hostView(host) },
+      { ticket: ticket.ticket, expiresAt: ticket.expiresAt, host: pairing.hostView(host) } satisfies PairingTicketResult,
       { head: ctx.head },
     )
   })
 
-  router.add('POST', '/v1/pairings/claim', async ctx => {
+  router.add('POST', NODE_API.pairingClaim.pattern, async ctx => {
     const decision = limiter.take('pairing-claim', ctx.ip, config.limits.pairingClaim)
     if (!decision.allowed) throw rateLimited(decision.retryAfterMs)
     const parsed = claimPairingSchema.safeParse(await readJsonBody(ctx.req))
@@ -77,7 +78,7 @@ export function registerPairingRoutes(router: Router, services: AppServices): vo
     sendJson(ctx.res, 201, result, { head: ctx.head })
   })
 
-  router.add('POST', '/v1/pairings/:requestId/confirm', ctx => {
+  router.add('POST', NODE_API.pairingConfirm.pattern, ctx => {
     const token = pairingTokenFrom(ctx.req)
     const decision = limiter.take('pairing-decision', ctx.ip, config.limits.pairingDecision)
     if (!decision.allowed) throw rateLimited(decision.retryAfterMs)
@@ -90,7 +91,7 @@ export function registerPairingRoutes(router: Router, services: AppServices): vo
     sendJson(ctx.res, 200, status, { head: ctx.head, headers: cookieHeaders(cookie) })
   })
 
-  router.add('POST', '/v1/pairings/:requestId/reject', ctx => {
+  router.add('POST', NODE_API.pairingReject.pattern, ctx => {
     const token = pairingTokenFrom(ctx.req)
     const decision = limiter.take('pairing-decision', ctx.ip, config.limits.pairingDecision)
     if (!decision.allowed) throw rateLimited(decision.retryAfterMs)
@@ -99,7 +100,7 @@ export function registerPairingRoutes(router: Router, services: AppServices): vo
     sendJson(ctx.res, 200, status, { head: ctx.head })
   })
 
-  router.add('GET', '/v1/pairings/:requestId', ctx => {
+  router.add('GET', NODE_API.pairing.pattern, ctx => {
     const token = pairingTokenFrom(ctx.req)
     const decision = limiter.take('pairing-poll', ctx.ip, config.limits.pairingDecision)
     if (!decision.allowed) throw rateLimited(decision.retryAfterMs)

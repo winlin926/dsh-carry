@@ -1,20 +1,26 @@
 import { z } from 'zod'
 
+import {
+  FINGERPRINT_PATTERN,
+  HOST_ID_PATTERN,
+  NODE_CAPABILITIES,
+  NODE_KINDS,
+  NODE_VERSION_PATTERN,
+  PUBLIC_KEY_PATTERN,
+  type NodeCapability,
+} from '../../src/remote/node-api.js'
+
+export { FINGERPRINT_PATTERN, HOST_ID_PATTERN, NODE_KINDS }
+
 /** The complete capability whitelist of the node contract. */
-export const CAPABILITY_VALUES = ['pairing', 'cache', 'official-ui'] as const
+export const CAPABILITY_VALUES = NODE_CAPABILITIES
 
-export type Capability = (typeof CAPABILITY_VALUES)[number]
-
-export const NODE_KINDS = ['gateway', 'service'] as const
+export type Capability = NodeCapability
 
 const capabilitySchema = z.enum(CAPABILITY_VALUES)
 
-/** A Host id is the 43-character Base64URL S256 fingerprint of the Host SPKI key. */
-export const HOST_ID_PATTERN = /^[A-Za-z0-9_-]{43}$/u
-/** First 16 bytes of that digest, lowercase hex. */
-export const FINGERPRINT_PATTERN = /^[0-9a-f]{32}$/u
 /** Base64URL alphabet and length only; the DER structure is validated by identity.ts. */
-export const IDENTITY_KEY_PATTERN = /^[A-Za-z0-9_-]{40,120}$/u
+export const IDENTITY_KEY_PATTERN = PUBLIC_KEY_PATTERN
 
 const identityKeySchema = z.string().regex(
   IDENTITY_KEY_PATTERN,
@@ -43,7 +49,7 @@ export const nodeDescriptorSchema = z.object({
   protocol: z.literal(2),
   kind: z.enum(NODE_KINDS),
   name: z.string().min(1).max(64),
-  version: z.string().regex(/^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$/u),
+  version: z.string().regex(NODE_VERSION_PATTERN),
   capabilities: z.array(capabilitySchema).min(1).max(CAPABILITY_VALUES.length).refine(
     values => new Set(values).size === values.length,
     'Capabilities must be unique.',

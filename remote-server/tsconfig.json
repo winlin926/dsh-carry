@@ -24,6 +24,7 @@
   },
   "include": [
     "src/**/*.ts",
+    "../src/remote/node-api.ts",
     "../src/remote/tunnel-protocol.ts"
   ],
   "exclude": [

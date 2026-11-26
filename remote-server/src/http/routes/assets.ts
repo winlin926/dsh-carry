@@ -1,10 +1,9 @@
+import { HOST_ID_PATTERN, NODE_API } from '../../../../src/remote/node-api.js'
 import { ASSET_REVISION_PATTERN } from '../../contract.js'
 import { ApiError, rateLimited } from '../../errors.js'
 import type { AppServices } from '../../services.js'
 import type { RouteContext, Router } from '../router.js'
 import { baseHeaders, readRawBody, sendBuffer, sendJson } from '../util.js'
-
-const HOST_ID_PATTERN = /^[A-Za-z0-9_-]{43}$/u
 
 function ifNoneMatchFrom(ctx: RouteContext): string | null {
   const raw = ctx.req.headers['if-none-match']
@@ -19,7 +18,7 @@ function ifNoneMatchFrom(ctx: RouteContext): string | null {
 export function registerAssetRoutes(router: Router, services: AppServices): void {
   const { config, auth, assets, limiter, tunnelProxy } = services
 
-  router.add('PUT', '/v1/assets', async ctx => {
+  router.add('PUT', NODE_API.assets.pattern, async ctx => {
     const host = auth.authenticateHostRequest(ctx.req)
     const decision = limiter.take('asset-upload', host.host_id, { ratePerSecond: 8, burst: 64 })
     if (!decision.allowed) throw rateLimited(decision.retryAfterMs)
@@ -85,6 +84,6 @@ export function registerAssetRoutes(router: Router, services: AppServices): void
     })
   }
 
-  router.add('GET', '/assets/:hid/:rev/*', serveAsset)
-  router.add('HEAD', '/assets/:hid/:rev/*', serveAsset)
+  router.add('GET', NODE_API.asset.pattern, serveAsset)
+  router.add('HEAD', NODE_API.asset.pattern, serveAsset)
 }

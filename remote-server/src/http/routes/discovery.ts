@@ -1,3 +1,4 @@
+import { NODE_API } from '../../../../src/remote/node-api.js'
 import { parseNodeDescriptor } from '../../contract.js'
 import type { AppServices } from '../../services.js'
 import type { Router } from '../router.js'
@@ -16,7 +17,7 @@ export function registerDiscoveryRoutes(router: Router, services: AppServices): 
     publicKey: nodeIdentity.publicKey,
   }
 
-  router.add('GET', '/.well-known/dsh-remote', ctx => {
+  router.add('GET', NODE_API.discovery.pattern, ctx => {
     const descriptor = parseNodeDescriptor({
       protocol: 2,
       kind: 'service',
@@ -28,11 +29,11 @@ export function registerDiscoveryRoutes(router: Router, services: AppServices): 
     sendJson(ctx.res, 200, descriptor, { head: ctx.head, cacheControl: 'no-store' })
   })
 
-  router.add('GET', '/healthz', ctx => {
+  router.add('GET', NODE_API.health.pattern, ctx => {
     sendJson(ctx.res, 200, { ok: true, version: config.nodeVersion }, { head: ctx.head })
   })
 
-  router.add('GET', '/v1/config', ctx => {
+  router.add('GET', NODE_API.config.pattern, ctx => {
     sendJson(
       ctx.res,
       200,

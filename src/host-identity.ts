@@ -1,12 +1,12 @@
 import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomUUID, type KeyObject } from 'node:crypto'
 import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import { FINGERPRINT_PATTERN } from './remote/node-api.js'
 
 /** The file both the gateway and a local remote-server read to present one stable Host identity. */
 export const HOST_IDENTITY_FILE = 'host-identity.json'
 const IDENTITY_VERSION = 1
 const IDENTITY_ALGORITHM = 'ed25519'
-const FINGERPRINT_PATTERN = /^[a-f0-9]{32}$/
 
 interface StoredIdentity { version: 1; algorithm: 'ed25519'; publicKey: string; privateKey: string; createdAt: string }
 

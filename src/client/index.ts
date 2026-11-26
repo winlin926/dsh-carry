@@ -3,6 +3,7 @@ import { CSS } from './style.js'
 import { PhoneIcon } from './nav-icon.js'
 import { PluginUpdate, resolvePluginManager, updateCard, type PluginManagerFace } from './plugin-update.js'
 import type { ConnectionFace, RemoteRuntime, RemoteSnapshot } from '../remote-runtime.js'
+import type { NodeKind, NodePublicIdentity } from '../remote/node-api.js'
 const h = React.createElement
 const ROUTE = '/api/dsh-remote-connect/manage'
 const PACKAGE_NAME = '@winlin926/dsh-carry'
@@ -16,9 +17,9 @@ function updateStoreFor(manager: () => PluginManagerFace | null): PluginUpdate {
   updateStore ??= new PluginUpdate({ packageName: PACKAGE_NAME, manager, installed: () => hostVersion })
   return updateStore
 }
-export type PublicNodeKind = 'gateway' | 'service'
+export type PublicNodeKind = NodeKind
 /** One node identity: protocol 2 carries it, protocol 1 records only keep the flat host pair. */
-export interface PublicNodeIdentity { id: string; fingerprint: string; publicKey: string }
+export type PublicNodeIdentity = NodePublicIdentity
 /** A protocol 2 node that came back with a different identity; nothing connects until the Host confirms it. */
 export interface PublicNodeIdentityChange { from: { id: string; fingerprint: string }; to: { id: string; fingerprint: string }; detectedAt: number }
 /** One Host entry the panel can add, probe, choose or remove. */

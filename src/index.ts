@@ -20,7 +20,7 @@ import { bootScript } from './boot.js'
 import { detectSystemProxy, type SystemProxy } from './system-proxy.js'
 import { readLanTls, type LanTlsConfig, type LanTlsMaterial } from './lan-tls.js'
 import { loadHostIdentity, fingerprintGroupsOf } from './host-identity.js'
-import { PUBLIC_NODE_PROTOCOL_V2, detectPublicNode, type PublicNodeDiscovery } from './public-node.js'
+import { PUBLIC_NODE_CAPABILITIES, PUBLIC_NODE_PROTOCOL_V2, detectPublicNode, type PublicNodeDiscovery } from './public-node.js'
 import { DirectHost } from './direct/peer.js'
 
 /** Advertised by discovery; read from the installed package so it always matches the running build. */
@@ -136,7 +136,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
   // The aliases carry the same values; a protocol-2 reader drops them and compares only `node`.
   const discovery: PublicNodeDiscovery = {
     protocol: PUBLIC_NODE_PROTOCOL_V2, kind: 'gateway', name: 'DeepSeek Harness', version: NODE_VERSION,
-    capabilities: ['pairing', 'cache', 'official-ui'],
+    capabilities: [...PUBLIC_NODE_CAPABILITIES],
     node: { id: hostIdentity.hostId, fingerprint: hostIdentity.fingerprint, publicKey: hostIdentity.publicKey },
     hostId: hostIdentity.hostId, fingerprint: hostIdentity.fingerprint,
   }

@@ -11,9 +11,19 @@
  */
 import { createPublicKey } from 'node:crypto'
 import { identityOfPublicKey } from './host-identity.js'
+import {
+  FINGERPRINT_PATTERN,
+  HOST_ID_PATTERN,
+  NODE_API,
+  NODE_CAPABILITIES,
+  NODE_VERSION_PATTERN,
+  PUBLIC_KEY_PATTERN,
+  type NodeCapability,
+  type NodeKind,
+} from './remote/node-api.js'
 
 /** The only discovery path; the exact path is also the gateway's only unpaired route. */
-export const PUBLIC_NODE_PATH = '/.well-known/dsh-remote'
+export const PUBLIC_NODE_PATH = NODE_API.discovery.pattern
 /** Protocol 1: one flat Host identity; the original document shape. */
 export const PUBLIC_NODE_PROTOCOL_V1 = 1
 /** Protocol 2: a self-certifying node identity. Clients that do not know it refuse the node. */
@@ -24,18 +34,13 @@ export const PUBLIC_NODE_TIMEOUT = 5000
 /** `name` as a person reads it, counted in Unicode code points. */
 export const NODE_NAME_MAX = 64
 
-export type PublicNodeKind = 'gateway' | 'service'
-export type PublicNodeCapability = 'pairing' | 'cache' | 'official-ui'
+export type PublicNodeKind = NodeKind
+export type PublicNodeCapability = NodeCapability
 /** Exact lowercase spellings; an unknown capability fails detection so a new one needs a protocol bump. */
-export const PUBLIC_NODE_CAPABILITIES: readonly PublicNodeCapability[] = ['pairing', 'cache', 'official-ui']
+export const PUBLIC_NODE_CAPABILITIES: readonly PublicNodeCapability[] = NODE_CAPABILITIES
 
 /** Host identity encodings; see `host-identity.ts` for how a node derives them. */
-export const HOST_ID_PATTERN = /^[A-Za-z0-9_-]{43}$/
-export const FINGERPRINT_PATTERN = /^[a-f0-9]{32}$/
-/** An Ed25519 SPKI DER in base64url: 40–120 URL-safe characters before the self-check. */
-export const PUBLIC_KEY_PATTERN = /^[A-Za-z0-9_-]{40,120}$/
-/** 1–32 ASCII characters, starting with a letter or digit: a semver fits, prose and spaces do not. */
-export const NODE_VERSION_PATTERN = /^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$/
+export { FINGERPRINT_PATTERN, HOST_ID_PATTERN, NODE_VERSION_PATTERN, PUBLIC_KEY_PATTERN }
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
 
 export function isPublicNodeKind(value: unknown): value is PublicNodeKind {
