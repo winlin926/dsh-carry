@@ -34,7 +34,7 @@ async function main(): Promise<void> {
   process.on('SIGTERM', () => void shutdown('SIGTERM'))
 }
 
-main().catch(error => {
+main().catch((error) => {
   process.stderr.write(`remote-server failed to start: ${error instanceof Error ? error.message : String(error)}\n`)
   process.exitCode = 1
 })

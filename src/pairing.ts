@@ -5,7 +5,8 @@ import { dirname } from 'node:path'
 const random = () => randomBytes(32).toString('base64url')
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const matches = (value: string, expected: string) => {
-  const a = Buffer.from(hash(value), 'hex'), b = Buffer.from(expected, 'hex')
+  const a = Buffer.from(hash(value), 'hex'),
+    b = Buffer.from(expected, 'hex')
   return a.length === b.length && timingSafeEqual(a, b)
 }
 export const IDLE_MS = 30 * 24 * 3600_000
@@ -13,14 +14,21 @@ export const IDLE_MS = 30 * 24 * 3600_000
 export type PairingEntry = 'lan' | 'public'
 
 export class PairingError extends Error {
-  constructor(readonly code: 'qr_invalid' | 'claim_invalid' | 'pairing_busy', message: string) {
+  constructor(
+    readonly code: 'qr_invalid' | 'claim_invalid' | 'pairing_busy',
+    message: string,
+  ) {
     super(message)
     this.name = 'PairingError'
   }
 }
 
 export interface Device {
-  id: string; name: string; createdAt: number; lastSeenAt: number; hash: string
+  id: string
+  name: string
+  createdAt: number
+  lastSeenAt: number
+  hash: string
   /** The address the device paired through, shown in the panel; the browser scopes its cookie to that origin. */
   host?: string
   /** Which entry paired it; absent on records written before the public double-confirmation flow. */
@@ -32,33 +40,72 @@ export interface Device {
   requiresRepair?: boolean
 }
 interface Pending {
-  id: string; name: string; host?: string; via: PairingEntry; expiresAt: number; keyHash: string
-  state: 'pending' | 'approved' | 'rejected'; credential?: string; collected?: boolean
+  id: string
+  name: string
+  host?: string
+  via: PairingEntry
+  expiresAt: number
+  keyHash: string
+  state: 'pending' | 'approved' | 'rejected'
+  credential?: string
+  collected?: boolean
   /** True only after the browser confirmed the host fingerprint on the public pairing page. */
   nodeConfirmed: boolean
 }
 /** A refused confirmation, kept in memory for the panel; never persisted. */
-export interface PairingFailure { at: number; name: string; reason: string }
-export interface PublicDeviceMigration { marked: number; already: number; devices: number }
+export interface PairingFailure {
+  at: number
+  name: string
+  reason: string
+}
+export interface PublicDeviceMigration {
+  marked: number
+  already: number
+  devices: number
+}
 
 /** A name a person can tell devices apart by: model (or system) and browser, from the User-Agent. */
 export function deviceName(userAgent: string, reported?: string): string {
-  const system = /iPad/.test(userAgent) ? 'iPad' : /iPhone/.test(userAgent) ? 'iPhone' : /Android/.test(userAgent) ? 'Android' : /Windows/.test(userAgent) ? 'Windows' : /Mac OS X/.test(userAgent) ? 'Mac' : /Linux/.test(userAgent) ? 'Linux' : '远程设备'
+  const system = /iPad/.test(userAgent)
+    ? 'iPad'
+    : /iPhone/.test(userAgent)
+      ? 'iPhone'
+      : /Android/.test(userAgent)
+        ? 'Android'
+        : /Windows/.test(userAgent)
+          ? 'Windows'
+          : /Mac OS X/.test(userAgent)
+            ? 'Mac'
+            : /Linux/.test(userAgent)
+              ? 'Linux'
+              : '远程设备'
   // Chrome's reduced User-Agent reports every Android model as "K".
   // The model the browser reports on request (secure pages only) is the real one; printable characters only.
   const hinted = reported?.replace(/[^\p{L}\p{N} ._()+-]/gu, '').trim()
   const model = hinted || /Android [\d.]+; ([^;)]+?)(?: Build\/[^;)]*)?[;)]/.exec(userAgent)?.[1]?.trim()
   const browsers: Array<[RegExp, string]> = [
-    [/MicroMessenger/, '微信'], [/EdgA?\/|EdgiOS/, 'Edge'], [/Quark/, '夸克'], [/HuaweiBrowser/, '华为浏览器'], [/MiuiBrowser/, '小米浏览器'],
-    [/SamsungBrowser/, '三星浏览器'], [/VivoBrowser/, 'vivo 浏览器'], [/HeyTapBrowser/, 'OPPO 浏览器'], [/Firefox|FxiOS/, 'Firefox'],
-    [/Chrome|CriOS/, 'Chrome'], [/Safari/, 'Safari'],
+    [/MicroMessenger/, '微信'],
+    [/EdgA?\/|EdgiOS/, 'Edge'],
+    [/Quark/, '夸克'],
+    [/HuaweiBrowser/, '华为浏览器'],
+    [/MiuiBrowser/, '小米浏览器'],
+    [/SamsungBrowser/, '三星浏览器'],
+    [/VivoBrowser/, 'vivo 浏览器'],
+    [/HeyTapBrowser/, 'OPPO 浏览器'],
+    [/Firefox|FxiOS/, 'Firefox'],
+    [/Chrome|CriOS/, 'Chrome'],
+    [/Safari/, 'Safari'],
   ]
   const browser = browsers.find(([pattern]) => pattern.test(userAgent))?.[1]
   const device = model && model !== 'K' && model.length <= 40 ? model : system
   return browser ? `${device} · ${browser}` : device
 }
 export interface PairingOptions {
-  file: string; now?: () => number; onRevoke?: (id: string) => void; idleMs?: number; isOnline?: (id: string) => boolean
+  file: string
+  now?: () => number
+  onRevoke?: (id: string) => void
+  idleMs?: number
+  isOnline?: (id: string) => boolean
 }
 export const MAX_DEVICES = 32
 
@@ -69,13 +116,19 @@ function hostKey(value: string): string | undefined {
   try {
     // The configured public entry is a full origin; recorded device hosts are bare host[:port].
     return /^[a-z][a-z0-9+.-]*:\/\//.test(text) ? new URL(text).host : new URL(`http://${text}`).host
-  } catch { return text }
+  } catch {
+    return text
+  }
 }
 /** The same host without its port, for a public domain whose recorded port may differ. */
 function hostName(value: string): string | undefined {
   const key = hostKey(value)
   if (!key) return undefined
-  try { return new URL(`http://${key}`).hostname } catch { return key }
+  try {
+    return new URL(`http://${key}`).hostname
+  } catch {
+    return key
+  }
 }
 
 /** Only hashes of device secrets reach disk. Pending claims live in memory. */
@@ -92,13 +145,29 @@ export class PairingService {
     this.idleMs = options.idleMs ?? IDLE_MS
     if (existsSync(options.file)) {
       const input: unknown = JSON.parse(readFileSync(options.file, 'utf8'))
-      if (!input || typeof input !== 'object' || !('devices' in input) || !Array.isArray(input.devices)) throw new Error('设备授权文件格式不正确，请备份后修复；不会忽略损坏的授权记录。')
+      if (!input || typeof input !== 'object' || !('devices' in input) || !Array.isArray(input.devices))
+        throw new Error('设备授权文件格式不正确，请备份后修复；不会忽略损坏的授权记录。')
       for (const row of input.devices) {
-        if (!row || typeof row.id !== 'string' || typeof row.name !== 'string' || !/^[a-f0-9]{64}$/.test(row.hash) || !Number.isFinite(row.lastSeenAt) || !Number.isFinite(row.createdAt) || (row.host !== undefined && typeof row.host !== 'string') || (row.via !== undefined && row.via !== 'lan' && row.via !== 'public') || (row.requiresRepair !== undefined && typeof row.requiresRepair !== 'boolean')) throw new Error('设备授权记录损坏。')
+        if (
+          !row ||
+          typeof row.id !== 'string' ||
+          typeof row.name !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(row.hash) ||
+          !Number.isFinite(row.lastSeenAt) ||
+          !Number.isFinite(row.createdAt) ||
+          (row.host !== undefined && typeof row.host !== 'string') ||
+          (row.via !== undefined && row.via !== 'lan' && row.via !== 'public') ||
+          (row.requiresRepair !== undefined && typeof row.requiresRepair !== 'boolean')
+        )
+          throw new Error('设备授权记录损坏。')
         this.devices.set(row.id, row)
       }
       if ('revokedRelays' in input) {
-        if (!Array.isArray(input.revokedRelays) || input.revokedRelays.some(id => typeof id !== 'string' || !/^relay-[a-f0-9]{64}$/.test(id))) throw new Error('公网节点撤销记录损坏。')
+        if (
+          !Array.isArray(input.revokedRelays) ||
+          input.revokedRelays.some((id) => typeof id !== 'string' || !/^relay-[a-f0-9]{64}$/.test(id))
+        )
+          throw new Error('公网节点撤销记录损坏。')
         for (const id of input.revokedRelays) this.revokedRelays.add(id)
       }
       this.expire()
@@ -108,53 +177,103 @@ export class PairingService {
     mkdirSync(dirname(this.options.file), { recursive: true })
     const temporary = `${this.options.file}.${randomUUID()}.tmp`
     try {
-      writeFileSync(temporary, JSON.stringify({ version: 1, devices: [...this.devices.values()], ...(this.revokedRelays.size ? { revokedRelays: [...this.revokedRelays] } : {}) }), { mode: 0o600 })
+      writeFileSync(
+        temporary,
+        JSON.stringify({
+          version: 1,
+          devices: [...this.devices.values()],
+          ...(this.revokedRelays.size ? { revokedRelays: [...this.revokedRelays] } : {}),
+        }),
+        { mode: 0o600 },
+      )
       renameSync(temporary, this.options.file)
-    } catch (error) { if (existsSync(temporary)) unlinkSync(temporary); throw error }
+    } catch (error) {
+      if (existsSync(temporary)) unlinkSync(temporary)
+      throw error
+    }
   }
   private expire(): void {
-    const expired = [...this.devices.values()].filter(d => this.now() - d.lastSeenAt >= this.idleMs)
+    const expired = [...this.devices.values()].filter((d) => this.now() - d.lastSeenAt >= this.idleMs)
     if (expired.length) {
       for (const device of expired) this.devices.delete(device.id)
-      try { this.save() } catch (error) { for (const device of expired) this.devices.set(device.id, device); throw error }
+      try {
+        this.save()
+      } catch (error) {
+        for (const device of expired) this.devices.set(device.id, device)
+        throw error
+      }
       for (const device of expired) this.disconnectDevice(device.id)
     }
     for (const [id, claim] of this.pending) if (this.now() >= claim.expiresAt) this.pending.delete(id)
   }
   issue(): { token: string; expiresAt: number } {
-    const token = random(), expiresAt = this.now() + 5 * 60_000
+    const token = random(),
+      expiresAt = this.now() + 5 * 60_000
     this.token = { hash: hash(token), expiresAt }
     // A refresh also invalidates outstanding claims from the previous QR.
     this.pending.clear()
     this.failureState = undefined
     return { token, expiresAt }
   }
-  invalidate(): void { this.token = undefined; this.pending.clear() }
-  request(token: string, userAgent: string, host?: string, model?: string, via: PairingEntry = 'lan', nodeConfirmed = false): { id: string; key: string; expiresAt: number } {
+  invalidate(): void {
+    this.token = undefined
+    this.pending.clear()
+  }
+  request(
+    token: string,
+    userAgent: string,
+    host?: string,
+    model?: string,
+    via: PairingEntry = 'lan',
+    nodeConfirmed = false,
+  ): { id: string; key: string; expiresAt: number } {
     this.expire()
-    if (!this.token || this.now() >= this.token.expiresAt || !matches(token, this.token.hash)) throw new PairingError('qr_invalid', '二维码已过期或已刷新，请重新扫码。')
+    if (!this.token || this.now() >= this.token.expiresAt || !matches(token, this.token.hash))
+      throw new PairingError('qr_invalid', '二维码已过期或已刷新，请重新扫码。')
     if (this.outstanding() >= 16) throw new PairingError('pairing_busy', '等待配对的设备过多，请稍后再试。')
-    const id = randomUUID(), key = random(), expiresAt = Math.min(this.now() + 5 * 60_000, this.token.expiresAt)
-    this.pending.set(id, { id, name: deviceName(userAgent, model), host: host?.toLowerCase(), via, expiresAt, keyHash: hash(key), state: 'pending', nodeConfirmed: via === 'lan' || nodeConfirmed })
+    const id = randomUUID(),
+      key = random(),
+      expiresAt = Math.min(this.now() + 5 * 60_000, this.token.expiresAt)
+    this.pending.set(id, {
+      id,
+      name: deviceName(userAgent, model),
+      host: host?.toLowerCase(),
+      via,
+      expiresAt,
+      keyHash: hash(key),
+      state: 'pending',
+      nodeConfirmed: via === 'lan' || nodeConfirmed,
+    })
     this.failureState = undefined
     return { id, key, expiresAt }
   }
   requests(): Array<{ id: string; name: string; via: PairingEntry; nodeConfirmed: boolean; expiresAt: number }> {
     this.expire()
-    return [...this.pending.values()].filter(p => p.state === 'pending').map(({ id, name, via, nodeConfirmed, expiresAt }) => ({ id, name, via, nodeConfirmed, expiresAt }))
+    return [...this.pending.values()]
+      .filter((p) => p.state === 'pending')
+      .map(({ id, name, via, nodeConfirmed, expiresAt }) => ({ id, name, via, nodeConfirmed, expiresAt }))
   }
   /** Claims a new ticket would strand: waiting for approval, or approved but not yet collected. */
-  outstanding(): number { this.expire(); return [...this.pending.values()].filter(p => p.state === 'pending' || p.state === 'approved' && !p.collected).length }
+  outstanding(): number {
+    this.expire()
+    return [...this.pending.values()].filter((p) => p.state === 'pending' || (p.state === 'approved' && !p.collected))
+      .length
+  }
   /** Records a refused confirmation so the panel can say why, instead of failing silently. */
-  reportFailure(name: string, reason: string): void { this.failureState = { at: this.now(), name: name.trim().slice(0, 40), reason: reason.slice(0, 200) } }
-  failure(): PairingFailure | undefined { return this.failureState }
+  reportFailure(name: string, reason: string): void {
+    this.failureState = { at: this.now(), name: name.trim().slice(0, 40), reason: reason.slice(0, 200) }
+  }
+  failure(): PairingFailure | undefined {
+    return this.failureState
+  }
   approve(id: string): void {
     this.expire()
     const claim = this.pending.get(id)
     if (!claim || claim.state !== 'pending') throw new Error('配对请求已失效。')
     // The public entry requires both ends: the browser confirmed this host's fingerprint, and the
     // computer's panel confirms the same device and the same fingerprint before a cookie is issued.
-    if (claim.via === 'public' && !claim.nodeConfirmed) throw new Error('浏览器还没有确认本机指纹，请重新打开配对页确认。')
+    if (claim.via === 'public' && !claim.nodeConfirmed)
+      throw new Error('浏览器还没有确认本机指纹，请重新打开配对页确认。')
     const credential = this.registerDevice(claim.name, claim.host, claim.via)
     claim.state = 'approved'
     claim.credential = credential
@@ -163,14 +282,27 @@ export class PairingService {
   private registerDevice(name: string, host?: string, via?: PairingEntry, deviceId: string = randomUUID()): string {
     let replaced: Device | undefined
     if (this.devices.size >= MAX_DEVICES) {
-      replaced = [...this.devices.values()].filter(d => !d.id.startsWith('relay-') && !this.options.isOnline?.(d.id)).sort((a, b) => a.lastSeenAt - b.lastSeenAt)[0]
+      replaced = [...this.devices.values()]
+        .filter((d) => !d.id.startsWith('relay-') && !this.options.isOnline?.(d.id))
+        .sort((a, b) => a.lastSeenAt - b.lastSeenAt)[0]
       if (!replaced) throw new Error(`已有 ${MAX_DEVICES} 台设备在线，请先撤销不再使用的设备。`)
     }
-    const secret = random(), now = this.now()
-    const device: Device = { id: deviceId, name, hash: hash(secret), createdAt: now, lastSeenAt: now, ...(host ? { host: host.toLowerCase() } : {}), ...(via ? { via } : {}) }
+    const secret = random(),
+      now = this.now()
+    const device: Device = {
+      id: deviceId,
+      name,
+      hash: hash(secret),
+      createdAt: now,
+      lastSeenAt: now,
+      ...(host ? { host: host.toLowerCase() } : {}),
+      ...(via ? { via } : {}),
+    }
     if (replaced) this.devices.delete(replaced.id)
     this.devices.set(deviceId, device)
-    try { this.save() } catch (error) {
+    try {
+      this.save()
+    } catch (error) {
       this.devices.delete(deviceId)
       if (replaced) this.devices.set(replaced.id, replaced)
       throw error
@@ -191,20 +323,35 @@ export class PairingService {
     else if (claim.state === 'rejected') this.pending.delete(id)
     return result
   }
-  private relayId(scope: string, clientId: string): string { return 'relay-' + hash(JSON.stringify([scope, clientId])) }
+  private relayId(scope: string, clientId: string): string {
+    return 'relay-' + hash(JSON.stringify([scope, clientId]))
+  }
   admitRelay(scope: string, input: { id: string; name: string }): string | undefined {
-    if (typeof input?.id !== 'string' || !/^[a-zA-Z0-9_-]{16,64}$/.test(input.id) || typeof input.name !== 'string' || !input.name.trim()) return undefined
+    if (
+      typeof input?.id !== 'string' ||
+      !/^[a-zA-Z0-9_-]{16,64}$/.test(input.id) ||
+      typeof input.name !== 'string' ||
+      !input.name.trim()
+    )
+      return undefined
     this.expire()
     const id = this.relayId(scope, input.id)
     if (this.revokedRelays.has(id)) return undefined
     if (!this.devices.has(id)) this.registerDevice(input.name.trim().slice(0, 80), undefined, 'public', id)
     return id
   }
-  revokeRelay(scope: string, clientId: string): void { this.revoke(this.relayId(scope, clientId)) }
+  revokeRelay(scope: string, clientId: string): void {
+    this.revoke(this.relayId(scope, clientId))
+  }
   confirmRelay(scope: string, clientId: string): void {
     const id = this.relayId(scope, clientId)
     if (!this.revokedRelays.delete(id)) return
-    try { this.save() } catch (error) { this.revokedRelays.add(id); throw error }
+    try {
+      this.save()
+    } catch (error) {
+      this.revokedRelays.add(id)
+      throw error
+    }
   }
   authenticateDevice(id: string): Device | undefined {
     this.expire()
@@ -226,18 +373,28 @@ export class PairingService {
     if (this.now() - device.lastSeenAt >= 60_000) {
       const previous = device.lastSeenAt
       device.lastSeenAt = this.now()
-      try { this.save() } catch (error) { device.lastSeenAt = previous; throw error }
+      try {
+        this.save()
+      } catch (error) {
+        device.lastSeenAt = previous
+        throw error
+      }
     }
     return device
   }
-  list(): Array<Omit<Device, 'hash'>> { this.expire(); return [...this.devices.values()].map(({ hash: _hash, ...device }) => device) }
+  list(): Array<Omit<Device, 'hash'>> {
+    this.expire()
+    return [...this.devices.values()].map(({ hash: _hash, ...device }) => device)
+  }
   revoke(id: string): void {
     const previous = this.devices.get(id)
     const relay = /^relay-[a-f0-9]{64}$/.test(id) && !this.revokedRelays.has(id)
     if (!previous && !relay) return
     if (relay) this.revokedRelays.add(id)
     this.devices.delete(id)
-    try { this.save() } catch (error) {
+    try {
+      this.save()
+    } catch (error) {
       if (previous) this.devices.set(id, previous)
       if (relay) this.revokedRelays.delete(id)
       throw error
@@ -250,16 +407,29 @@ export class PairingService {
     for (const [key, claim] of this.pending) if (claim.credential?.startsWith(`${id}.`)) this.pending.delete(key)
   }
   rename(id: string, name: string): void {
-    const device = this.devices.get(id), next = name.trim().slice(0, 40)
+    const device = this.devices.get(id),
+      next = name.trim().slice(0, 40)
     if (!device) throw new Error('设备不存在或已撤销。')
     if (!next) throw new Error('设备名称不能为空。')
     const previous = device.name
     device.name = next
-    try { this.save() } catch (error) { device.name = previous; throw error }
+    try {
+      this.save()
+    } catch (error) {
+      device.name = previous
+      throw error
+    }
   }
   /** Remove every device the test matches, e.g. those paired through an address that no longer exists. */
   prune(gone: (device: Omit<Device, 'hash'>) => boolean): void {
-    for (const device of [...this.devices.values()]) if (gone(device)) { try { this.revoke(device.id) } catch { /* kept until the next start */ } }
+    for (const device of [...this.devices.values()])
+      if (gone(device)) {
+        try {
+          this.revoke(device.id)
+        } catch {
+          /* kept until the next start */
+        }
+      }
   }
   /**
    * One explicit migration for authorizations issued through a public entry before the
@@ -270,17 +440,23 @@ export class PairingService {
   migratePublicDevices(publicHosts: readonly string[]): PublicDeviceMigration {
     const hosts = new Set<string>()
     for (const value of publicHosts) {
-      const key = hostKey(value), name = hostName(value)
+      const key = hostKey(value),
+        name = hostName(value)
       if (key) hosts.add(key)
       if (name) hosts.add(name)
     }
-    let marked = 0, already = 0
+    let marked = 0,
+      already = 0
     for (const device of this.devices.values()) {
       // A device paired after this flow is accepted by both ends and needs no repair.
       if (device.via !== undefined || !device.host) continue
-      const key = hostKey(device.host), name = hostName(device.host)
+      const key = hostKey(device.host),
+        name = hostName(device.host)
       if (!(key && hosts.has(key)) && !(name && hosts.has(name))) continue
-      if (device.requiresRepair) { already += 1; continue }
+      if (device.requiresRepair) {
+        already += 1
+        continue
+      }
       device.requiresRepair = true
       marked += 1
     }
@@ -289,10 +465,12 @@ export class PairingService {
   }
   revokeAll(): void {
     const previous = [...this.devices.values()]
-    const revoked = previous.filter(device => device.id.startsWith('relay-')).map(device => device.id)
+    const revoked = previous.filter((device) => device.id.startsWith('relay-')).map((device) => device.id)
     for (const id of revoked) this.revokedRelays.add(id)
     this.devices.clear()
-    try { this.save() } catch (error) {
+    try {
+      this.save()
+    } catch (error) {
       for (const id of revoked) this.revokedRelays.delete(id)
       for (const device of previous) this.devices.set(device.id, device)
       throw error

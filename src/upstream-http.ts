@@ -26,8 +26,19 @@ export interface UpstreamRequestOptions {
  * the browser's WebSocket handshake fields, which the loopback `ws` client supplies itself.
  */
 const BLOCKED = new Set([
-  'host', 'cookie', 'authorization', 'origin', 'referer', 'connection', 'upgrade', 'accept-encoding',
-  'forwarded', 'sec-fetch-site', 'sec-websocket-key', 'sec-websocket-version', 'sec-websocket-extensions',
+  'host',
+  'cookie',
+  'authorization',
+  'origin',
+  'referer',
+  'connection',
+  'upgrade',
+  'accept-encoding',
+  'forwarded',
+  'sec-fetch-site',
+  'sec-websocket-key',
+  'sec-websocket-version',
+  'sec-websocket-extensions',
   'sec-websocket-protocol',
 ])
 
@@ -46,7 +57,8 @@ export function upstreamRequestHeaders(
 ): Record<string, string | string[]> {
   const headers: Record<string, string | string[]> = {}
   for (const [name, value] of Object.entries(req.headers)) {
-    if (value !== undefined && !BLOCKED.has(name) && !name.startsWith('x-forwarded') && !name.startsWith('x-dsh')) headers[name] = value
+    if (value !== undefined && !BLOCKED.has(name) && !name.startsWith('x-forwarded') && !name.startsWith('x-dsh'))
+      headers[name] = value
   }
   const host = `127.0.0.1:${options.upstreamPort}`
   return {

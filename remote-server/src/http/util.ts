@@ -57,12 +57,7 @@ export interface ResponseOptions {
   headers?: Record<string, string>
 }
 
-export function sendJson(
-  res: ServerResponse,
-  status: number,
-  body: unknown,
-  options: ResponseOptions = {},
-): void {
+export function sendJson(res: ServerResponse, status: number, body: unknown, options: ResponseOptions = {}): void {
   const payload = JSON.stringify(body)
   res.writeHead(status, {
     ...baseHeaders(),

@@ -46,7 +46,7 @@ export function registerLandingRoutes(router: Router, services: AppServices): vo
   router.add('GET', '/', render)
   router.add('GET', '/pair', render)
 
-  router.add('GET', '/favicon.ico', ctx => {
+  router.add('GET', '/favicon.ico', (ctx) => {
     ctx.res.writeHead(204, { 'cache-control': 'public, max-age=86400' })
     ctx.res.end()
   })

@@ -16,10 +16,24 @@ import { dirname, join } from 'node:path'
 import type { RawData, WebSocket as TunnelSocket } from 'ws'
 import { NODE_API, type HostRegistration } from './remote/node-api.js'
 import {
-  TUNNEL_BACKPRESSURE_HIGH_WATER, TUNNEL_BACKPRESSURE_LOW_WATER, TUNNEL_HEARTBEAT_INTERVAL_MS, TUNNEL_HEARTBEAT_TIMEOUT_MS,
-  TUNNEL_IDLE_TIMEOUT_MS, TUNNEL_MAX_REQUESTS_PER_HOST, TUNNEL_PATH, TUNNEL_REQUEST_TIMEOUT_MS, TUNNEL_WS_MESSAGE_MAX,
-  TunnelFrameError, assembleTunnelWsFrame, decodeTunnelFrame, encodeTunnelFrame, splitTunnelPayload, splitTunnelWsPayload,
-  type TunnelFrame, type TunnelHeaders, type TunnelWsMessageAssembly,
+  TUNNEL_BACKPRESSURE_HIGH_WATER,
+  TUNNEL_BACKPRESSURE_LOW_WATER,
+  TUNNEL_HEARTBEAT_INTERVAL_MS,
+  TUNNEL_HEARTBEAT_TIMEOUT_MS,
+  TUNNEL_IDLE_TIMEOUT_MS,
+  TUNNEL_MAX_REQUESTS_PER_HOST,
+  TUNNEL_PATH,
+  TUNNEL_REQUEST_TIMEOUT_MS,
+  TUNNEL_WS_MESSAGE_MAX,
+  TunnelFrameError,
+  assembleTunnelWsFrame,
+  decodeTunnelFrame,
+  encodeTunnelFrame,
+  splitTunnelPayload,
+  splitTunnelWsPayload,
+  type TunnelFrame,
+  type TunnelHeaders,
+  type TunnelWsMessageAssembly,
 } from './remote/tunnel-protocol.js'
 import { safePath } from './gateway.js'
 import { RELAY_MARK } from './direct/protocol.js'
@@ -138,7 +152,12 @@ function bytesOf(data: RawData): Uint8Array {
 }
 
 function closeReason(reason: unknown): string | undefined {
-  const text = typeof reason === 'string' ? reason.trim() : reason instanceof Uint8Array ? Buffer.from(reason).toString('utf8').trim() : ''
+  const text =
+    typeof reason === 'string'
+      ? reason.trim()
+      : reason instanceof Uint8Array
+        ? Buffer.from(reason).toString('utf8').trim()
+        : ''
   if (!text) return undefined
   const encoded = Buffer.from(text)
   return encoded.length <= CLOSE_REASON_MAX ? text : encoded.subarray(0, CLOSE_REASON_MAX).toString('utf8')
@@ -151,9 +170,12 @@ function storedNodeOf(value: unknown): StoredNode | null {
   if (typeof row.credential !== 'string' || !/^[\x21-\x7e]{1,512}$/.test(row.credential)) return null
   if (typeof row.hostId !== 'string' || !row.hostId) return null
   if (typeof row.registeredAt !== 'number' || !Number.isFinite(row.registeredAt)) return null
-  const lastConnectedAt = row.lastConnectedAt === null || row.lastConnectedAt === undefined
-    ? null
-    : typeof row.lastConnectedAt === 'number' && Number.isFinite(row.lastConnectedAt) ? row.lastConnectedAt : undefined
+  const lastConnectedAt =
+    row.lastConnectedAt === null || row.lastConnectedAt === undefined
+      ? null
+      : typeof row.lastConnectedAt === 'number' && Number.isFinite(row.lastConnectedAt)
+        ? row.lastConnectedAt
+        : undefined
   if (lastConnectedAt === undefined) return null
   return { credential: row.credential, hostId: row.hostId, registeredAt: row.registeredAt, lastConnectedAt }
 }
@@ -166,15 +188,22 @@ function validCredential(value: string): string {
 
 async function readNodes(file: string): Promise<Record<string, StoredNode>> {
   let text: string
-  try { text = await readFile(file, 'utf8') } catch (failure) {
+  try {
+    text = await readFile(file, 'utf8')
+  } catch (failure) {
     if ((failure as NodeJS.ErrnoException).code === 'ENOENT') return {}
     throw new ServiceNodeError(`服务节点凭据文件无法读取：${file}。`)
   }
   let value: unknown
-  try { value = JSON.parse(text) } catch { return {} }
+  try {
+    value = JSON.parse(text)
+  } catch {
+    return {}
+  }
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   const row = value as Record<string, unknown>
-  if (row.version !== SERVICE_NODES_VERSION || !row.nodes || typeof row.nodes !== 'object' || Array.isArray(row.nodes)) return {}
+  if (row.version !== SERVICE_NODES_VERSION || !row.nodes || typeof row.nodes !== 'object' || Array.isArray(row.nodes))
+    return {}
   const nodes: Record<string, StoredNode> = {}
   for (const [origin, record] of Object.entries(row.nodes as Record<string, unknown>)) {
     const node = storedNodeOf(record)
@@ -192,10 +221,13 @@ async function writeNodes(file: string, nodes: Record<string, StoredNode>): Prom
   try {
     await writeFile(temporary, JSON.stringify({ version: SERVICE_NODES_VERSION, nodes }), { mode: 0o600 })
     for (let attempt = 0; ; attempt += 1) {
-      try { await rename(temporary, file); return } catch (failure) {
+      try {
+        await rename(temporary, file)
+        return
+      } catch (failure) {
         const code = (failure as NodeJS.ErrnoException).code ?? ''
         if (attempt >= 4 || !TRANSIENT_WRITE_CODES.has(code)) throw failure
-        await new Promise(resolve => setTimeout(resolve, 20 * (attempt + 1)))
+        await new Promise((resolve) => setTimeout(resolve, 20 * (attempt + 1)))
       }
     }
   } catch (failure) {
@@ -205,7 +237,12 @@ async function writeNodes(file: string, nodes: Record<string, StoredNode>): Prom
 }
 
 async function rmQuietly(file: string): Promise<void> {
-  try { const { unlink } = await import('node:fs/promises'); await unlink(file) } catch { /* already gone */ }
+  try {
+    const { unlink } = await import('node:fs/promises')
+    await unlink(file)
+  } catch {
+    /* already gone */
+  }
 }
 
 /**
@@ -235,16 +272,19 @@ async function deleteHostRegistration(origin: string, hostId: string, credential
     })
   } catch (failure) {
     const code = (failure as NodeJS.ErrnoException).code
-    throw new ServiceNodeError(code ? `无法连接服务节点以撤销主机注册（${code}）。` : '无法连接服务节点以撤销主机注册。')
+    throw new ServiceNodeError(
+      code ? `无法连接服务节点以撤销主机注册（${code}）。` : '无法连接服务节点以撤销主机注册。',
+    )
   }
   if (response.status === 204 || response.status === 404) {
     response.body?.cancel().catch(() => undefined)
     return
   }
   response.body?.cancel().catch(() => undefined)
-  const message = response.status === 401 || response.status === 403
-    ? `节点拒绝了撤销主机注册（HTTP ${response.status}），节点上的注册可能仍在。`
-    : `节点没有撤销主机注册（HTTP ${response.status}），节点上的注册可能仍在。`
+  const message =
+    response.status === 401 || response.status === 403
+      ? `节点拒绝了撤销主机注册（HTTP ${response.status}），节点上的注册可能仍在。`
+      : `节点没有撤销主机注册（HTTP ${response.status}），节点上的注册可能仍在。`
   throw new ServiceNodeError(message)
 }
 
@@ -258,7 +298,11 @@ export interface ServiceNodeIdentity {
  * that is not currently connected. A missing entry (or one saved for another identity) is a no-op;
  * the local credential is dropped once the node confirms the deletion.
  */
-export async function unregisterServiceNode(storage: string, origin: string, identity?: ServiceNodeIdentity): Promise<void> {
+export async function unregisterServiceNode(
+  storage: string,
+  origin: string,
+  identity?: ServiceNodeIdentity,
+): Promise<void> {
   const file = join(storage, SERVICE_NODES_FILE)
   const nodes = await readNodes(file)
   const stored = nodes[origin]
@@ -326,10 +370,15 @@ export class ServiceNode {
     if (this.active) return
     this.active = true
     this.lastError = undefined
-    try { this.nodes = await readNodes(this.file) }
-    catch (failure) { this.lastError = failure instanceof Error ? failure.message : '服务节点凭据读取失败。'; this.nodes = {} }
-    try { await this.connect() }
-    catch (failure) {
+    try {
+      this.nodes = await readNodes(this.file)
+    } catch (failure) {
+      this.lastError = failure instanceof Error ? failure.message : '服务节点凭据读取失败。'
+      this.nodes = {}
+    }
+    try {
+      await this.connect()
+    } catch (failure) {
       if (!this.active) return
       this.lastError = this.describe(failure)
       this.log('service-node-error', { origin: this.origin, hostId: this.hostId, message: this.lastError })
@@ -341,12 +390,24 @@ export class ServiceNode {
   async stop(): Promise<void> {
     this.active = false
     this.connected = false
-    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = undefined }
-    if (this.drainTimer) { clearTimeout(this.drainTimer); this.drainTimer = undefined }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = undefined
+    }
+    if (this.drainTimer) {
+      clearTimeout(this.drainTimer)
+      this.drainTimer = undefined
+    }
     this.stopHeartbeat()
     const socket = this.socket
     this.socket = undefined
-    if (socket) { try { socket.terminate() } catch { /* already gone */ } }
+    if (socket) {
+      try {
+        socket.terminate()
+      } catch {
+        /* already gone */
+      }
+    }
     this.failAll()
     this.pairings.clear()
   }
@@ -357,7 +418,11 @@ export class ServiceNode {
       origin: this.origin,
       connected: this.connected,
       ...(this.lastError ? { lastError: this.lastError } : {}),
-      pendingPairings: [...this.pairings].map(([requestId, pairing]) => ({ requestId, deviceName: pairing.deviceName, expiresAt: pairing.expiresAt })),
+      pendingPairings: [...this.pairings].map(([requestId, pairing]) => ({
+        requestId,
+        deviceName: pairing.deviceName,
+        expiresAt: pairing.expiresAt,
+      })),
     }
   }
 
@@ -398,10 +463,18 @@ export class ServiceNode {
         throw new ServiceNodeError(`节点没有签发配对票据（HTTP ${response.status}）。`)
       }
       let body: unknown
-      try { body = await response.json() } catch { throw new ServiceNodeError('节点返回的配对票据不是有效的 JSON。') }
-      const row = body && typeof body === 'object' ? body as Record<string, unknown> : undefined
-      const ticket = row && typeof row.ticket === 'string' && /^[A-Za-z0-9_-]{43}$/u.test(row.ticket) ? row.ticket : undefined
-      const expiresAt = row && typeof row.expiresAt === 'number' && Number.isSafeInteger(row.expiresAt) && row.expiresAt > 0 ? row.expiresAt : undefined
+      try {
+        body = await response.json()
+      } catch {
+        throw new ServiceNodeError('节点返回的配对票据不是有效的 JSON。')
+      }
+      const row = body && typeof body === 'object' ? (body as Record<string, unknown>) : undefined
+      const ticket =
+        row && typeof row.ticket === 'string' && /^[A-Za-z0-9_-]{43}$/u.test(row.ticket) ? row.ticket : undefined
+      const expiresAt =
+        row && typeof row.expiresAt === 'number' && Number.isSafeInteger(row.expiresAt) && row.expiresAt > 0
+          ? row.expiresAt
+          : undefined
       if (!ticket || expiresAt === undefined) throw new ServiceNodeError('节点返回的配对票据格式不正确。')
       const hash = new URLSearchParams({ v: '1', ticket, key: this.identityKey })
       this.lastError = undefined
@@ -484,10 +557,23 @@ export class ServiceNode {
         this.lastError = undefined
         this.lastFrameAt = this.now()
         this.startHeartbeat()
-        this.send({ t: 'hello', hostId: this.hostId, version: this.clientVersion, capabilities: this.options.relayTarget ? ['http', 'ws', 'assets', 'direct'] : ['http', 'ws', 'assets'] })
+        this.send({
+          t: 'hello',
+          hostId: this.hostId,
+          version: this.clientVersion,
+          capabilities: this.options.relayTarget ? ['http', 'ws', 'assets', 'direct'] : ['http', 'ws', 'assets'],
+        })
         this.log('service-node-connect', { origin: this.origin, hostId: this.hostId })
         void this.touchConnectedAt()
-        try { this.onConnected?.() } catch (failure) { this.log('service-node-error', { origin: this.origin, hostId: this.hostId, message: failure instanceof Error ? failure.message : '服务节点连接回调失败。' }) }
+        try {
+          this.onConnected?.()
+        } catch (failure) {
+          this.log('service-node-error', {
+            origin: this.origin,
+            hostId: this.hostId,
+            message: failure instanceof Error ? failure.message : '服务节点连接回调失败。',
+          })
+        }
         settle()
       })
       socket.on('message', (data: RawData, isBinary: boolean) => this.receive(socket, data, isBinary))
@@ -515,8 +601,13 @@ export class ServiceNode {
         this.failAll()
         const text = closeReason(reason)
         const message = handshake?.message ?? (text ? `与节点的连接已断开：${text}` : `与节点的连接已断开（${code}）。`)
-        if (wasConnected) this.log('service-node-disconnect', { origin: this.origin, hostId: this.hostId, code, message })
-        if (!settled) { settled = true; reject(handshake ?? new ServiceNodeError(message)); return }
+        if (wasConnected)
+          this.log('service-node-disconnect', { origin: this.origin, hostId: this.hostId, code, message })
+        if (!settled) {
+          settled = true
+          reject(handshake ?? new ServiceNodeError(message))
+          return
+        }
         if (this.active) this.scheduleReconnect()
       })
     })
@@ -527,36 +618,51 @@ export class ServiceNode {
     const raw = Math.min(this.reconnectMax, this.reconnectBase * 2 ** Math.min(this.attempts, 30))
     const factor = 1 + Math.min(0.2, Math.max(0, this.jitter()))
     this.attempts += 1
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = undefined
-      if (!this.active) return
-      void this.connect().catch(failure => {
+    this.reconnectTimer = setTimeout(
+      () => {
+        this.reconnectTimer = undefined
         if (!this.active) return
-        this.lastError = this.describe(failure)
-        this.log('service-node-error', { origin: this.origin, hostId: this.hostId, message: this.lastError })
-        this.scheduleReconnect()
-      })
-    }, Math.max(0, Math.round(raw * factor)))
+        void this.connect().catch((failure) => {
+          if (!this.active) return
+          this.lastError = this.describe(failure)
+          this.log('service-node-error', { origin: this.origin, hostId: this.hostId, message: this.lastError })
+          this.scheduleReconnect()
+        })
+      },
+      Math.max(0, Math.round(raw * factor)),
+    )
     this.reconnectTimer.unref?.()
   }
 
   private startHeartbeat(): void {
     this.stopHeartbeat()
-    this.heartbeatTimer = setInterval(() => { this.send({ t: 'ping', at: this.now() }) }, TUNNEL_HEARTBEAT_INTERVAL_MS)
+    this.heartbeatTimer = setInterval(() => {
+      this.send({ t: 'ping', at: this.now() })
+    }, TUNNEL_HEARTBEAT_INTERVAL_MS)
     this.heartbeatTimer.unref?.()
     this.heartbeatWatchdog = setInterval(() => {
       if (!this.socket) return
       if (this.now() - this.lastFrameAt < TUNNEL_HEARTBEAT_TIMEOUT_MS) return
       this.lastError = '长时间没有收到节点的数据，正在重新连接。'
       this.log('service-node-error', { origin: this.origin, hostId: this.hostId, message: this.lastError })
-      try { this.socket?.terminate() } catch { /* close handler reconnects */ }
+      try {
+        this.socket?.terminate()
+      } catch {
+        /* close handler reconnects */
+      }
     }, TUNNEL_HEARTBEAT_INTERVAL_MS)
     this.heartbeatWatchdog.unref?.()
   }
 
   private stopHeartbeat(): void {
-    if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = undefined }
-    if (this.heartbeatWatchdog) { clearInterval(this.heartbeatWatchdog); this.heartbeatWatchdog = undefined }
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = undefined
+    }
+    if (this.heartbeatWatchdog) {
+      clearInterval(this.heartbeatWatchdog)
+      this.heartbeatWatchdog = undefined
+    }
   }
 
   // ── registration and persistence ─────────────────────────────────────────────────────────────
@@ -574,7 +680,12 @@ export class ServiceNode {
       response = await fetch(`${this.origin}${NODE_API.hosts.url()}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ deviceId: this.hostId, name: REGISTER_NAME, identityKey: this.identityKey, clientVersion: this.clientVersion } satisfies HostRegistration),
+        body: JSON.stringify({
+          deviceId: this.hostId,
+          name: REGISTER_NAME,
+          identityKey: this.identityKey,
+          clientVersion: this.clientVersion,
+        } satisfies HostRegistration),
         signal: AbortSignal.timeout(REGISTER_TIMEOUT_MS),
       })
     } catch (failure) {
@@ -584,9 +695,20 @@ export class ServiceNode {
     if (response.status === 409) {
       const body = await response.text().catch(() => '')
       let code = ''
-      try { const parsed: unknown = JSON.parse(body); if (parsed && typeof parsed === 'object') { const value = (parsed as Record<string, unknown>).code; if (typeof value === 'string') code = value } } catch { /* the message below covers an opaque 409 */ }
+      try {
+        const parsed: unknown = JSON.parse(body)
+        if (parsed && typeof parsed === 'object') {
+          const value = (parsed as Record<string, unknown>).code
+          if (typeof value === 'string') code = value
+        }
+      } catch {
+        /* the message below covers an opaque 409 */
+      }
       if (code === 'IDENTITY_IN_USE') throw new ServiceNodeError('该主机身份已被其他注册占用，请检查节点配置。')
-      if (code === 'HOST_ALREADY_REGISTERED') throw new ServiceNodeError('节点上已存在该主机的注册记录，但本机没有保存凭据。请在节点上重置该主机，或恢复本机的服务节点凭据文件。')
+      if (code === 'HOST_ALREADY_REGISTERED')
+        throw new ServiceNodeError(
+          '节点上已存在该主机的注册记录，但本机没有保存凭据。请在节点上重置该主机，或恢复本机的服务节点凭据文件。',
+        )
       throw new ServiceNodeError('节点拒绝了本机注册（HTTP 409）。')
     }
     if (response.status !== 201) {
@@ -594,11 +716,15 @@ export class ServiceNode {
       throw new ServiceNodeError(`节点注册失败（HTTP ${response.status}）。`)
     }
     let body: unknown
-    try { body = await response.json() } catch { throw new ServiceNodeError('节点返回的注册结果不是有效的 JSON。') }
+    try {
+      body = await response.json()
+    } catch {
+      throw new ServiceNodeError('节点返回的注册结果不是有效的 JSON。')
+    }
     if (!body || typeof body !== 'object') throw new ServiceNodeError('节点返回的注册结果格式不正确。')
     const row = body as Record<string, unknown>
     // The node's answer must name this Host: a credential for somebody else's fingerprint is never used.
-    const host = row.host && typeof row.host === 'object' ? row.host as Record<string, unknown> : undefined
+    const host = row.host && typeof row.host === 'object' ? (row.host as Record<string, unknown>) : undefined
     const returnedHostId = host && typeof host.hostId === 'string' ? host.hostId : undefined
     if (returnedHostId !== this.hostId) throw new ServiceNodeError('节点返回的主机指纹与本机不一致，已拒绝使用该节点。')
     if (typeof row.credential !== 'string') throw new ServiceNodeError('节点没有返回可用的凭据。')
@@ -613,20 +739,31 @@ export class ServiceNode {
     const stored = this.nodes[this.origin]
     if (!stored || stored.credential !== credential) return
     delete this.nodes[this.origin]
-    try { await this.persist() } catch { /* the next registration overwrites the file anyway */ }
+    try {
+      await this.persist()
+    } catch {
+      /* the next registration overwrites the file anyway */
+    }
   }
 
   private async touchConnectedAt(): Promise<void> {
     const stored = this.nodes[this.origin]
     if (!stored) return
     this.nodes[this.origin] = { ...stored, lastConnectedAt: this.now() }
-    try { await this.persist() } catch { /* bookkeeping only */ }
+    try {
+      await this.persist()
+    } catch {
+      /* bookkeeping only */
+    }
   }
 
   private persist(): Promise<void> {
     const snapshot: Record<string, StoredNode> = JSON.parse(JSON.stringify(this.nodes)) as Record<string, StoredNode>
     // A failed attempt must not poison the queue: the next save still runs (and reports its own failure).
-    this.writing = this.writing.then(() => writeNodes(this.file, snapshot), () => writeNodes(this.file, snapshot))
+    this.writing = this.writing.then(
+      () => writeNodes(this.file, snapshot),
+      () => writeNodes(this.file, snapshot),
+    )
     return this.writing
   }
 
@@ -636,12 +773,18 @@ export class ServiceNode {
     const socket = this.socket
     if (!socket || socket.readyState !== socket.OPEN) return
     let data: Buffer
-    try { data = encodeTunnelFrame(frame, payload) } catch (failure) {
+    try {
+      data = encodeTunnelFrame(frame, payload)
+    } catch (failure) {
       // An oversized frame is a programming error: log the reason, never the payload.
-      this.log('service-node-error', { origin: this.origin, hostId: this.hostId, message: failure instanceof Error ? failure.message : '发送隧道帧失败。' })
+      this.log('service-node-error', {
+        origin: this.origin,
+        hostId: this.hostId,
+        message: failure instanceof Error ? failure.message : '发送隧道帧失败。',
+      })
       return
     }
-    socket.send(data, { binary: true }, failure => {
+    socket.send(data, { binary: true }, (failure) => {
       if (!failure) return
       this.log('service-node-error', { origin: this.origin, hostId: this.hostId, message: '向节点发送数据失败。' })
     })
@@ -658,33 +801,67 @@ export class ServiceNode {
       const message = failure instanceof Error ? failure.message : '无法解析节点的数据。'
       this.lastError = '与节点的通信格式不正确，正在重新连接。'
       this.log('service-node-error', { origin: this.origin, hostId: this.hostId, message })
-      try { socket.terminate() } catch { /* the close handler reconnects */ }
+      try {
+        socket.terminate()
+      } catch {
+        /* the close handler reconnects */
+      }
     }
   }
 
   private handle(frame: TunnelFrame, payload: Uint8Array): void {
     switch (frame.t) {
-      case 'ping': this.send({ t: 'pong', at: frame.at }); break
-      case 'pong': break
-      case 'http.request': this.openHttp(frame.id, frame.method, frame.path, frame.headers, frame.relayDevice); break
-      case 'http.body': this.writeHttp(frame.id, payload); break
-      case 'http.body.end': this.endHttp(frame.id); break
-      case 'http.cancel': this.cancelHttp(frame.id); break
-      case 'ws.open': this.openWs(frame.id, frame.path, frame.headers, frame.protocol, frame.relayDevice); break
-      case 'ws.frame': this.deliverWs(frame.id, frame.binary, frame.fin, payload); break
-      case 'ws.close': this.closeWs(frame.id, frame.code, frame.reason); break
-      case 'pair.request': this.addPairing(frame.requestId, frame.clientName, frame.expiresAt); break
-      case 'pair.revoked': this.options.relayPairRevoked?.(frame.clientDeviceId); break
-      case 'pair.complete': this.options.relayPairComplete?.(frame.clientDeviceId); this.pairings.delete(frame.requestId); break
-      case 'pair.reject': this.pairings.delete(frame.requestId); break
+      case 'ping':
+        this.send({ t: 'pong', at: frame.at })
+        break
+      case 'pong':
+        break
+      case 'http.request':
+        this.openHttp(frame.id, frame.method, frame.path, frame.headers, frame.relayDevice)
+        break
+      case 'http.body':
+        this.writeHttp(frame.id, payload)
+        break
+      case 'http.body.end':
+        this.endHttp(frame.id)
+        break
+      case 'http.cancel':
+        this.cancelHttp(frame.id)
+        break
+      case 'ws.open':
+        this.openWs(frame.id, frame.path, frame.headers, frame.protocol, frame.relayDevice)
+        break
+      case 'ws.frame':
+        this.deliverWs(frame.id, frame.binary, frame.fin, payload)
+        break
+      case 'ws.close':
+        this.closeWs(frame.id, frame.code, frame.reason)
+        break
+      case 'pair.request':
+        this.addPairing(frame.requestId, frame.clientName, frame.expiresAt)
+        break
+      case 'pair.revoked':
+        this.options.relayPairRevoked?.(frame.clientDeviceId)
+        break
+      case 'pair.complete':
+        this.options.relayPairComplete?.(frame.clientDeviceId)
+        this.pairings.delete(frame.requestId)
+        break
+      case 'pair.reject':
+        this.pairings.delete(frame.requestId)
+        break
       // Node-bound frame types never travel to the Host; a peer sending one is simply ignored.
-      default: break
+      default:
+        break
     }
   }
 
   // ── HTTP forwarding ─────────────────────────────────────────────────────────────────────────
 
-  private target(headers: TunnelHeaders, device?: TunnelRelayDevice): { port: number; headers: TunnelHeaders } | undefined {
+  private target(
+    headers: TunnelHeaders,
+    device?: TunnelRelayDevice,
+  ): { port: number; headers: TunnelHeaders } | undefined {
     if (device !== undefined && this.options.relayTarget) {
       const target = this.options.relayTarget(device)
       if (!target) return undefined
@@ -692,7 +869,10 @@ export class ServiceNode {
       delete outgoing.cookie
       return { port: target.port, headers: { ...outgoing, [RELAY_MARK]: target.mark } }
     }
-    return { port: this.upstreamPort, headers: upstreamRequestHeaders({ headers }, { upstreamPort: this.upstreamPort, cookie: this.upstreamCookie() }) }
+    return {
+      port: this.upstreamPort,
+      headers: upstreamRequestHeaders({ headers }, { upstreamPort: this.upstreamPort, cookie: this.upstreamCookie() }),
+    }
   }
 
   private openHttp(id: string, method: string, path: string, headers: TunnelHeaders, device?: TunnelRelayDevice): void {
@@ -704,7 +884,12 @@ export class ServiceNode {
     try {
       const target = safePath(path) ? this.target(headers, device) : undefined
       if (!target) {
-        this.send({ t: 'http.response', id, status: 403, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
+        this.send({
+          t: 'http.response',
+          id,
+          status: 403,
+          headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+        })
         this.send({ t: 'http.chunk', id }, Buffer.from('{"code":"unpaired"}'))
         this.send({ t: 'http.end', id })
         return
@@ -724,8 +909,11 @@ export class ServiceNode {
     }
     request.setTimeout(TUNNEL_REQUEST_TIMEOUT_MS, () => request.destroy(new Error('上游请求超时。')))
     request.on('error', fail)
-    request.on('response', response => {
-      if (call.finished) { response.destroy(); return }
+    request.on('response', (response) => {
+      if (call.finished) {
+        response.destroy()
+        return
+      }
       call.response = response
       const outgoing: TunnelHeaders = {}
       for (const [name, value] of Object.entries(response.headers)) {
@@ -738,7 +926,11 @@ export class ServiceNode {
         // Streamed, never buffered: an SSE response must reach the phone chunk by chunk.
         for (const part of splitTunnelPayload(chunk)) this.send({ t: 'http.chunk', id }, part)
         if (call.paused) return
-        if ((this.socket?.bufferedAmount ?? 0) > OUTBOUND_HIGH_WATER) { call.paused = true; response.pause(); this.armDrain() }
+        if ((this.socket?.bufferedAmount ?? 0) > OUTBOUND_HIGH_WATER) {
+          call.paused = true
+          response.pause()
+          this.armDrain()
+        }
       })
       response.on('end', () => {
         if (call.finished) return
@@ -746,12 +938,18 @@ export class ServiceNode {
         this.httpCalls.delete(id)
         this.send({ t: 'http.end', id })
       })
-      response.on('error', () => { response.destroy(); fail() })
+      response.on('error', () => {
+        response.destroy()
+        fail()
+      })
     })
     request.on('close', () => {
       // The upstream connection can close before the response stream ends; the error path reports it.
       if (call.finished) return
-      if (!call.response) { fail(); return }
+      if (!call.response) {
+        fail()
+        return
+      }
     })
   }
 
@@ -778,15 +976,31 @@ export class ServiceNode {
 
   // ── WebSocket forwarding ────────────────────────────────────────────────────────────────────
 
-  private async openWs(id: string, path: string, headers: TunnelHeaders, protocol?: string, device?: TunnelRelayDevice): Promise<void> {
+  private async openWs(
+    id: string,
+    path: string,
+    headers: TunnelHeaders,
+    protocol?: string,
+    device?: TunnelRelayDevice,
+  ): Promise<void> {
     const ws = await this.loadWs().catch(() => undefined)
-    if (!ws) { this.send({ t: 'ws.ack', id, ok: false, status: 502, message: '本机 WebSocket 客户端不可用。' }); return }
+    if (!ws) {
+      this.send({ t: 'ws.ack', id, ok: false, status: 502, message: '本机 WebSocket 客户端不可用。' })
+      return
+    }
     let socket: TunnelSocket
     try {
       const target = safePath(path) ? this.target(headers, device) : undefined
-      if (!target) { this.send({ t: 'ws.ack', id, ok: false, status: 403, message: '设备未授权。' }); return }
+      if (!target) {
+        this.send({ t: 'ws.ack', id, ok: false, status: 403, message: '设备未授权。' })
+        return
+      }
       delete target.headers['sec-websocket-protocol']
-      socket = new ws.WebSocket(`ws://127.0.0.1:${target.port}${path}`, protocol ? [protocol] : [], { headers: target.headers, handshakeTimeout: HANDSHAKE_TIMEOUT_MS, maxPayload: TUNNEL_WS_MESSAGE_MAX })
+      socket = new ws.WebSocket(`ws://127.0.0.1:${target.port}${path}`, protocol ? [protocol] : [], {
+        headers: target.headers,
+        handshakeTimeout: HANDSHAKE_TIMEOUT_MS,
+        maxPayload: TUNNEL_WS_MESSAGE_MAX,
+      })
     } catch {
       this.send({ t: 'ws.ack', id, ok: false, status: 502, message: '本机 WebSocket 服务没有接受连接。' })
       return
@@ -804,7 +1018,10 @@ export class ServiceNode {
       for (const slice of splitTunnelWsPayload(bytesOf(data))) {
         this.send({ t: 'ws.frame', id, binary: isBinary, ...(slice.fin ? {} : { fin: false }) }, slice.payload)
       }
-      if ((this.socket?.bufferedAmount ?? 0) > OUTBOUND_HIGH_WATER) { socket.pause(); this.armDrain() }
+      if ((this.socket?.bufferedAmount ?? 0) > OUTBOUND_HIGH_WATER) {
+        socket.pause()
+        this.armDrain()
+      }
     })
     socket.on('close', (code: number, reason: Buffer) => {
       if (this.wsCalls.get(id) !== call) return
@@ -821,7 +1038,11 @@ export class ServiceNode {
         this.wsCalls.delete(id)
         clearTimeout(call.timer)
         this.send({ t: 'ws.ack', id, ok: false, status: 502, message: '本机 WebSocket 服务没有接受连接。' })
-        try { socket.terminate() } catch { /* already gone */ }
+        try {
+          socket.terminate()
+        } catch {
+          /* already gone */
+        }
       }
     })
   }
@@ -833,7 +1054,11 @@ export class ServiceNode {
       if (this.wsCalls.get(id) !== call) return
       this.wsCalls.delete(id)
       this.send({ t: 'ws.close', id, code: 1000, reason: '空闲超时。' })
-      try { call.socket.close(1000, '空闲超时。') } catch { /* already closed */ }
+      try {
+        call.socket.close(1000, '空闲超时。')
+      } catch {
+        /* already closed */
+      }
     }, TUNNEL_IDLE_TIMEOUT_MS)
     call.timer.unref?.()
   }
@@ -847,7 +1072,11 @@ export class ServiceNode {
       this.wsCalls.delete(id)
       clearTimeout(call.timer)
       this.send({ t: 'ws.close', id, code: assembled.code, reason: assembled.reason })
-      try { call.socket.close(assembled.code, assembled.reason) } catch { /* already closed */ }
+      try {
+        call.socket.close(assembled.code, assembled.reason)
+      } catch {
+        /* already closed */
+      }
       return
     }
     call.pendingMessage = assembled.pending
@@ -862,7 +1091,11 @@ export class ServiceNode {
     call.remoteClosed = true
     this.wsCalls.delete(id)
     clearTimeout(call.timer)
-    try { call.socket.close(code ?? 1000, reason) } catch { /* already closed */ }
+    try {
+      call.socket.close(code ?? 1000, reason)
+    } catch {
+      /* already closed */
+    }
   }
 
   // ── outbound backpressure ────────────────────────────────────────────────────────────────────
@@ -873,7 +1106,10 @@ export class ServiceNode {
       this.drainTimer = undefined
       const socket = this.socket
       if (!socket) return
-      if (socket.bufferedAmount >= OUTBOUND_LOW_WATER) { this.armDrain(); return }
+      if (socket.bufferedAmount >= OUTBOUND_LOW_WATER) {
+        this.armDrain()
+        return
+      }
       for (const call of this.httpCalls.values()) {
         if (!call.paused) continue
         call.paused = false
@@ -904,8 +1140,15 @@ export class ServiceNode {
     for (const [id, call] of this.wsCalls) {
       this.wsCalls.delete(id)
       clearTimeout(call.timer)
-      try { call.socket.terminate() } catch { /* already gone */ }
+      try {
+        call.socket.terminate()
+      } catch {
+        /* already gone */
+      }
     }
-    if (this.drainTimer) { clearTimeout(this.drainTimer); this.drainTimer = undefined }
+    if (this.drainTimer) {
+      clearTimeout(this.drainTimer)
+      this.drainTimer = undefined
+    }
   }
 }

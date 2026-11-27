@@ -96,9 +96,13 @@ const MIGRATIONS: Migration[] = [
       )`,
     ],
   },
-  { version: 2, name: 'bind-sessions-to-host', statements: [
-    'ALTER TABLE device_sessions ADD COLUMN bound_host_id TEXT REFERENCES hosts(host_id) ON DELETE CASCADE',
-  ] },
+  {
+    version: 2,
+    name: 'bind-sessions-to-host',
+    statements: [
+      'ALTER TABLE device_sessions ADD COLUMN bound_host_id TEXT REFERENCES hosts(host_id) ON DELETE CASCADE',
+    ],
+  },
 ]
 
 export class Database {
@@ -121,14 +125,17 @@ export class Database {
       applied_at INTEGER NOT NULL
     )`)
     const applied = this.prepare('SELECT version FROM schema_migrations').all() as Array<{ version: number }>
-    const versions = new Set(applied.map(row => Number(row.version)))
+    const versions = new Set(applied.map((row) => Number(row.version)))
     for (const migration of MIGRATIONS) {
       if (versions.has(migration.version)) continue
       this.sqlite.exec('BEGIN IMMEDIATE')
       try {
         for (const statement of migration.statements) this.sqlite.exec(statement)
-        this.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)')
-          .run(migration.version, migration.name, Date.now())
+        this.prepare('INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)').run(
+          migration.version,
+          migration.name,
+          Date.now(),
+        )
         this.sqlite.exec('COMMIT')
       } catch (error) {
         this.sqlite.exec('ROLLBACK')

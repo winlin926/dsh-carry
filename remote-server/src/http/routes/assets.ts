@@ -7,7 +7,7 @@ import { baseHeaders, readRawBody, sendBuffer, sendJson } from '../util.js'
 
 function ifNoneMatchFrom(ctx: RouteContext): string | null {
   const raw = ctx.req.headers['if-none-match']
-  return Array.isArray(raw) ? raw[0] ?? null : raw ?? null
+  return Array.isArray(raw) ? (raw[0] ?? null) : (raw ?? null)
 }
 
 /**
@@ -18,7 +18,7 @@ function ifNoneMatchFrom(ctx: RouteContext): string | null {
 export function registerAssetRoutes(router: Router, services: AppServices): void {
   const { config, auth, assets, limiter, tunnelProxy } = services
 
-  router.add('PUT', NODE_API.assets.pattern, async ctx => {
+  router.add('PUT', NODE_API.assets.pattern, async (ctx) => {
     const host = auth.authenticateHostRequest(ctx.req)
     const decision = limiter.take('asset-upload', host.host_id, { ratePerSecond: 8, burst: 64 })
     if (!decision.allowed) throw rateLimited(decision.retryAfterMs)

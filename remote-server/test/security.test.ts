@@ -1,13 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { test } from 'node:test'
-import {
-  api,
-  hostRegistration,
-  rawRequest,
-  registerHost,
-  startNode,
-} from './helpers.ts'
+import { api, hostRegistration, rawRequest, registerHost, startNode } from './helpers.ts'
 
 test('cross-origin writes are rejected and same-origin writes pass', async () => {
   const node = await startNode()
@@ -151,7 +145,9 @@ test('damaged cookies and hostile headers never produce 500s', async () => {
     })
     assert.equal(huge.status, 401)
 
-    const noBearer = await api(node.baseUrl, 'DELETE', '/v1/hosts/x/devices/y', { headers: { authorization: 'Basic abc' } })
+    const noBearer = await api(node.baseUrl, 'DELETE', '/v1/hosts/x/devices/y', {
+      headers: { authorization: 'Basic abc' },
+    })
     assert.equal(noBearer.status, 401)
     assert.equal(noBearer.json.error.code, 'AUTH_REQUIRED')
 

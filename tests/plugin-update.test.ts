@@ -14,26 +14,59 @@ import {
 
 const NAME = '@winlin926/dsh-carry'
 const CLIENT_DIR = new URL('../src/client/', import.meta.url)
-const SOURCE = readdirSync(CLIENT_DIR).filter((name) => name.endsWith('.ts')).sort()
-  .map((name) => readFileSync(new URL(name, CLIENT_DIR), 'utf8')).join('\n')
-const bundle = (overrides: Partial<UpdateBundle> = {}): UpdateBundle => ({ name: NAME, installed: true, enabled: true, version: '0.6.0', update: 'registry', ...overrides })
-const listed = (versions: Array<Record<string, unknown>>, installed = '0.6.0'): UpdateVersionList => ({
-  status: 'listed', installed, registry: 'https://registry.npmjs.org', versions: versions.map(item => ({ version: '0.9.9', prerelease: false, bundle: true, ...item })) as never, omitted: 0,
-} as UpdateVersionList)
+const SOURCE = readdirSync(CLIENT_DIR)
+  .filter((name) => name.endsWith('.ts'))
+  .sort()
+  .map((name) => readFileSync(new URL(name, CLIENT_DIR), 'utf8'))
+  .join('\n')
+const bundle = (overrides: Partial<UpdateBundle> = {}): UpdateBundle => ({
+  name: NAME,
+  installed: true,
+  enabled: true,
+  version: '0.6.0',
+  update: 'registry',
+  ...overrides,
+})
+const listed = (versions: Array<Record<string, unknown>>, installed = '0.6.0'): UpdateVersionList =>
+  ({
+    status: 'listed',
+    installed,
+    registry: 'https://registry.npmjs.org',
+    versions: versions.map((item) => ({ version: '0.9.9', prerelease: false, bundle: true, ...item })) as never,
+    omitted: 0,
+  }) as UpdateVersionList
 
-interface Calls { bundles: number; versions: number; updates: Array<{ version: string; registry?: string; requestId: string }> }
-function manager(overrides: {
-  bundles?: () => Promise<unknown>
-  versions?: () => Promise<unknown>
-  update?: () => Promise<unknown>
-} = {}): { face: PluginManagerFace; calls: Calls } {
+interface Calls {
+  bundles: number
+  versions: number
+  updates: Array<{ version: string; registry?: string; requestId: string }>
+}
+function manager(
+  overrides: {
+    bundles?: () => Promise<unknown>
+    versions?: () => Promise<unknown>
+    update?: () => Promise<unknown>
+  } = {},
+): { face: PluginManagerFace; calls: Calls } {
   const calls: Calls = { bundles: 0, versions: 0, updates: [] }
   const face: PluginManagerFace = {
-    async listBundles() { calls.bundles++; return (overrides.bundles ?? (async () => ({ ok: true, value: [bundle()] })))() as never },
-    async listVersions() { calls.versions++; return (overrides.versions ?? (async () => ({ ok: true, value: listed([{ version: '0.7.0' }]) })))() as never },
+    async listBundles() {
+      calls.bundles++
+      return (overrides.bundles ?? (async () => ({ ok: true, value: [bundle()] })))() as never
+    },
+    async listVersions() {
+      calls.versions++
+      return (overrides.versions ?? (async () => ({ ok: true, value: listed([{ version: '0.7.0' }]) })))() as never
+    },
     async updateBundle(_name, version, options) {
       calls.updates.push({ version, ...options })
-      return (overrides.update ?? (async () => ({ ok: true, value: { from: '0.6.0', to: version, result: { changed: true, application: 'applied' } } })))() as never
+      return (
+        overrides.update ??
+        (async () => ({
+          ok: true,
+          value: { from: '0.6.0', to: version, result: { changed: true, application: 'applied' } },
+        }))
+      )() as never
     },
   }
   return { face, calls }
@@ -48,7 +81,12 @@ function store(face: PluginManagerFace | null, options: { installed?: () => stri
     cacheMs: options.cacheMs,
     requestId: () => 'request-1',
   })
-  return { update, tick: (ms: number) => { clock += ms } }
+  return {
+    update,
+    tick: (ms: number) => {
+      clock += ms
+    },
+  }
 }
 
 describe('pickUpdate', () => {
@@ -70,7 +108,9 @@ describe('pickUpdate', () => {
 
 describe('check', () => {
   it('offers the newest compatible stable release', async () => {
-    const { face } = manager({ versions: async () => ({ ok: true, value: listed([{ version: '0.7.1' }, { version: '0.7.0' }]) }) })
+    const { face } = manager({
+      versions: async () => ({ ok: true, value: listed([{ version: '0.7.1' }, { version: '0.7.0' }]) }),
+    })
     const { update } = store(face)
     const snapshot = await update.check()
     expect(snapshot.phase).toBe('available')
@@ -130,7 +170,12 @@ describe('check', () => {
   })
 
   it('maps a refused not-updatable answer to the manual hint', async () => {
-    const { face } = manager({ versions: async () => ({ ok: true, value: { status: 'refused', problem: 'not-updatable', reason: 'link: dependency' } }) })
+    const { face } = manager({
+      versions: async () => ({
+        ok: true,
+        value: { status: 'refused', problem: 'not-updatable', reason: 'link: dependency' },
+      }),
+    })
     const { update } = store(face)
     const snapshot = await update.check()
     expect(snapshot.phase).toBe('unsupported')
@@ -138,7 +183,9 @@ describe('check', () => {
   })
 
   it('reports network failures and rejected queries as errors the user can retry', async () => {
-    const network = manager({ versions: async () => ({ ok: true, value: { status: 'refused', problem: 'network', reason: 'ENOTFOUND' } }) })
+    const network = manager({
+      versions: async () => ({ ok: true, value: { status: 'refused', problem: 'network', reason: 'ENOTFOUND' } }),
+    })
     const networkSnapshot = await store(network.face).update.check()
     expect(networkSnapshot.phase).toBe('error')
     expect(networkSnapshot.detail).toContain('网络')
@@ -148,21 +195,37 @@ describe('check', () => {
     expect(refusedSnapshot).toMatchObject({ phase: 'error', detail: '拒绝访问' })
     expect(updateCard(refusedSnapshot)).toMatchObject({ action: '重新检查', tone: 'danger' })
 
-    const broken = manager({ bundles: async () => { throw new Error('连接被重置') } })
+    const broken = manager({
+      bundles: async () => {
+        throw new Error('连接被重置')
+      },
+    })
     expect((await store(broken.face).update.check()).detail).toBe('连接被重置')
   })
 
   it('turns a missing-runtime stack into one actionable line', async () => {
-    const stack = "node:internal/modules/cjs/loader:1575\nthrow err;\n^\nError: Cannot find module 'F:\\AIData\\DeepSeek\\resources\\runtime\\primary-runtime\\dependencies\\pnpm\\bin\\pnpm.mjs'\n    at Module._resolveFilename (node:internal/modules/cjs/loader:1571:15)\n{ code: 'MODULE_NOT_FOUND' }"
+    const stack =
+      "node:internal/modules/cjs/loader:1575\nthrow err;\n^\nError: Cannot find module 'F:\\AIData\\DeepSeek\\resources\\runtime\\primary-runtime\\dependencies\\pnpm\\bin\\pnpm.mjs'\n    at Module._resolveFilename (node:internal/modules/cjs/loader:1571:15)\n{ code: 'MODULE_NOT_FOUND' }"
     const broken = manager({ bundles: async () => ({ ok: false, error: { message: stack } }) })
     const snapshot = await store(broken.face).update.check()
-    expect(snapshot).toMatchObject({ phase: 'error', detail: 'DSH 安装缺少内置运行时（找不到 pnpm），请重装或修复 DSH 后重试。' })
+    expect(snapshot).toMatchObject({
+      phase: 'error',
+      detail: 'DSH 安装缺少内置运行时（找不到 pnpm），请重装或修复 DSH 后重试。',
+    })
   })
 
   it('falls back to the Host version when the manager reports none', async () => {
     const { face } = manager({
       bundles: async () => ({ ok: true, value: [bundle({ version: undefined })] }),
-      versions: async () => ({ ok: true, value: { status: 'listed', registry: 'https://registry.npmjs.org', versions: [{ version: '0.7.0', prerelease: false, bundle: true }], omitted: 0 } }),
+      versions: async () => ({
+        ok: true,
+        value: {
+          status: 'listed',
+          registry: 'https://registry.npmjs.org',
+          versions: [{ version: '0.7.0', prerelease: false, bundle: true }],
+          omitted: 0,
+        },
+      }),
     })
     const { update } = store(face, { installed: () => '0.5.0' })
     expect((await update.check()).installed).toBe('0.5.0')
@@ -187,13 +250,17 @@ describe('update', () => {
     const { update } = store(face)
     await update.check()
     const snapshot = await update.update()
-    expect(calls.updates).toEqual([{ version: '0.7.0', registry: 'https://registry.npmjs.org', requestId: 'request-1' }])
+    expect(calls.updates).toEqual([
+      { version: '0.7.0', registry: 'https://registry.npmjs.org', requestId: 'request-1' },
+    ])
     expect(snapshot).toMatchObject({ phase: 'installed', installed: '0.7.0', message: '已更新到 0.7.0' })
     expect(updateCard(snapshot)).toMatchObject({ version: '0.7.0' })
   })
 
   it('reports a restart requirement instead of promising the running version changed', async () => {
-    const { face } = manager({ update: async () => ({ ok: true, value: { result: { changed: true, application: 'restart-required' } } }) })
+    const { face } = manager({
+      update: async () => ({ ok: true, value: { result: { changed: true, application: 'restart-required' } } }),
+    })
     const { update } = store(face)
     await update.check()
     const snapshot = await update.update()
@@ -202,14 +269,21 @@ describe('update', () => {
   })
 
   it('surfaces a failed installation with the manager message', async () => {
-    const { face } = manager({ update: async () => ({ ok: true, value: { result: { changed: false, application: 'failed', error: { message: '权限不足' } } } }) })
+    const { face } = manager({
+      update: async () => ({
+        ok: true,
+        value: { result: { changed: false, application: 'failed', error: { message: '权限不足' } } },
+      }),
+    })
     const { update } = store(face)
     await update.check()
     expect(await update.update()).toMatchObject({ phase: 'error', message: '更新失败', detail: '权限不足' })
   })
 
   it('returns to the offer when the user cancels inside the manager', async () => {
-    const { face } = manager({ update: async () => ({ ok: true, value: { result: { changed: false, application: 'cancelled' } } }) })
+    const { face } = manager({
+      update: async () => ({ ok: true, value: { result: { changed: false, application: 'cancelled' } } }),
+    })
     const { update } = store(face)
     await update.check()
     expect(await update.update()).toMatchObject({ phase: 'available', message: '已取消更新，仍在 0.6.0。' })
@@ -219,18 +293,29 @@ describe('update', () => {
     let installed = '0.6.0'
     const { face, calls } = manager({
       bundles: async () => ({ ok: true, value: [bundle({ version: installed })] }),
-      update: async () => { installed = '0.7.0'; throw new Error('连接中断') },
+      update: async () => {
+        installed = '0.7.0'
+        throw new Error('连接中断')
+      },
     })
     const { update } = store(face)
     await update.check()
     const snapshot = await update.update()
     expect(calls.updates).toHaveLength(1)
-    expect(snapshot).toMatchObject({ phase: 'installed', installed: '0.7.0', message: '已更新到 0.7.0，重启 DSH 后生效' })
+    expect(snapshot).toMatchObject({
+      phase: 'installed',
+      installed: '0.7.0',
+      message: '已更新到 0.7.0，重启 DSH 后生效',
+    })
     expect(snapshot.detail).toContain('不需要重复安装')
   })
 
   it('reports the uncertainty when the installed version did not move', async () => {
-    const { face, calls } = manager({ update: async () => { throw new Error('连接中断') } })
+    const { face, calls } = manager({
+      update: async () => {
+        throw new Error('连接中断')
+      },
+    })
     const { update } = store(face)
     await update.check()
     const snapshot = await update.update()
@@ -261,15 +346,23 @@ describe('resolvePluginManager', () => {
     const { face } = manager()
     const scope = globalThis as { __DSH_RC_UPDATE_FIXTURE__?: unknown }
     scope.__DSH_RC_UPDATE_FIXTURE__ = face
-    try { expect(resolvePluginManager({ manager: null })).toBe(face) }
-    finally { delete scope.__DSH_RC_UPDATE_FIXTURE__ }
+    try {
+      expect(resolvePluginManager({ manager: null })).toBe(face)
+    } finally {
+      delete scope.__DSH_RC_UPDATE_FIXTURE__
+    }
     expect(resolvePluginManager({ manager: null })).toBeNull()
   })
 
   it('rechecks on demand without caching a manual answer', async () => {
     const { face } = manager()
     let source: PluginManagerFace | null = null
-    const update = new PluginUpdate({ packageName: NAME, manager: () => source, installed: () => '0.6.0', requestId: () => 'request-1' })
+    const update = new PluginUpdate({
+      packageName: NAME,
+      manager: () => source,
+      installed: () => '0.6.0',
+      requestId: () => 'request-1',
+    })
     await update.check()
     expect(update.snapshot().phase).toBe('unsupported')
     source = face

@@ -10,14 +10,41 @@ const LIFETIME = 12 * 60 * 60 * 1000
 const MAX_SITES = 32
 
 export const PREVIEW_MIME: Record<string, string> = {
-  html: 'text/html; charset=utf-8', htm: 'text/html; charset=utf-8',
-  css: 'text/css; charset=utf-8', js: 'text/javascript; charset=utf-8', mjs: 'text/javascript; charset=utf-8',
-  json: 'application/json; charset=utf-8', map: 'application/json; charset=utf-8', webmanifest: 'application/manifest+json',
-  txt: 'text/plain; charset=utf-8', md: 'text/plain; charset=utf-8', csv: 'text/plain; charset=utf-8', xml: 'application/xml; charset=utf-8',
-  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml', ico: 'image/x-icon', avif: 'image/avif', bmp: 'image/bmp',
-  pdf: 'application/pdf', wasm: 'application/wasm',
-  woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf', eot: 'application/vnd.ms-fontobject',
-  mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', m4a: 'audio/mp4',
+  html: 'text/html; charset=utf-8',
+  htm: 'text/html; charset=utf-8',
+  css: 'text/css; charset=utf-8',
+  js: 'text/javascript; charset=utf-8',
+  mjs: 'text/javascript; charset=utf-8',
+  json: 'application/json; charset=utf-8',
+  map: 'application/json; charset=utf-8',
+  webmanifest: 'application/manifest+json',
+  txt: 'text/plain; charset=utf-8',
+  md: 'text/plain; charset=utf-8',
+  csv: 'text/plain; charset=utf-8',
+  xml: 'application/xml; charset=utf-8',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  ico: 'image/x-icon',
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  pdf: 'application/pdf',
+  wasm: 'application/wasm',
+  woff: 'font/woff',
+  woff2: 'font/woff2',
+  ttf: 'font/ttf',
+  otf: 'font/otf',
+  eot: 'application/vnd.ms-fontobject',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mov: 'video/quicktime',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  ogg: 'audio/ogg',
+  m4a: 'audio/mp4',
 }
 
 interface PreviewSite {
@@ -57,8 +84,12 @@ export class WorkspacePreviews {
     const site = this.sites.get(token)
     if (!site) return undefined
     const now = Date.now()
-    if (now - site.issued > LIFETIME || now - site.lastUsed > IDLE_TIME) { this.sites.delete(token); return undefined }
-    this.sites.delete(token); this.sites.set(token, { ...site, lastUsed: now })
+    if (now - site.issued > LIFETIME || now - site.lastUsed > IDLE_TIME) {
+      this.sites.delete(token)
+      return undefined
+    }
+    this.sites.delete(token)
+    this.sites.set(token, { ...site, lastUsed: now })
     return { deviceId: site.deviceId, root: site.root, path: rest.slice(slash + 1) }
   }
 
@@ -66,35 +97,63 @@ export class WorkspacePreviews {
     for (const [token, site] of this.sites) if (site.deviceId === deviceId) this.sites.delete(token)
   }
 
-  clear(): void { this.sites.clear() }
+  clear(): void {
+    this.sites.clear()
+  }
 
   async serve(preview: PreviewRequest, req: IncomingMessage, res: ServerResponse): Promise<void> {
     let relativePath: string
-    try { relativePath = decodeURIComponent(preview.path) } catch { res.writeHead(400); res.end(); return }
+    try {
+      relativePath = decodeURIComponent(preview.path)
+    } catch {
+      res.writeHead(400)
+      res.end()
+      return
+    }
     const candidate = resolve(preview.root, ...relativePath.split('/'))
-    if (!inside(preview.root, candidate)) { res.writeHead(404); res.end(); return }
+    if (!inside(preview.root, candidate)) {
+      res.writeHead(404)
+      res.end()
+      return
+    }
     try {
       const path = await realpath(candidate)
       const info = await stat(path)
-      if (!inside(preview.root, path) || !info.isFile()) { res.writeHead(404); res.end(); return }
+      if (!inside(preview.root, path) || !info.isFile()) {
+        res.writeHead(404)
+        res.end()
+        return
+      }
       const mime = PREVIEW_MIME[path.split('.').at(-1)?.toLowerCase() ?? ''] ?? 'application/octet-stream'
       const headers: Record<string, string | number> = {
-        'content-type': mime, 'content-length': info.size, 'cache-control': 'no-store',
-        'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer',
-        'origin-agent-cluster': '?1', 'access-control-allow-origin': 'null',
+        'content-type': mime,
+        'content-length': info.size,
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+        'referrer-policy': 'no-referrer',
+        'origin-agent-cluster': '?1',
+        'access-control-allow-origin': 'null',
       }
       // The opaque origin can run the artifact but cannot use DSH cookies, storage or APIs.
       // SVG is a document too: without the sandbox its scripts would run in the gateway origin.
-      if (mime.startsWith('text/html')) headers['content-security-policy'] = 'sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads'
+      if (mime.startsWith('text/html'))
+        headers['content-security-policy'] =
+          'sandbox allow-scripts allow-forms allow-modals allow-popups allow-downloads'
       else if (mime === 'image/svg+xml') headers['content-security-policy'] = 'sandbox'
       res.writeHead(200, headers)
-      if (req.method === 'HEAD') { res.end(); return }
+      if (req.method === 'HEAD') {
+        res.end()
+        return
+      }
       const stream = createReadStream(path)
       stream.on('error', () => res.destroy())
       res.once('close', () => stream.destroy())
       stream.pipe(res)
     } catch {
-      if (!res.headersSent) { res.writeHead(404); res.end() } else res.destroy()
+      if (!res.headersSent) {
+        res.writeHead(404)
+        res.end()
+      } else res.destroy()
     }
   }
 }

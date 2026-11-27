@@ -18,13 +18,24 @@ let served = 0
 
 const server = createServer((req, res) => {
   served += 1
-  const headers = { ...req.headers, host: authority, origin: 'http://' + authority, referer: 'http://' + authority + '/' }
+  const headers = {
+    ...req.headers,
+    host: authority,
+    origin: 'http://' + authority,
+    referer: 'http://' + authority + '/',
+  }
   delete headers['if-none-match']
-  const upstream = httpRequest({ host, port: Number(targetPort), method: req.method, path: req.url, headers }, answer => {
-    res.writeHead(answer.statusCode ?? 502, answer.headers)
-    answer.pipe(res)
+  const upstream = httpRequest(
+    { host, port: Number(targetPort), method: req.method, path: req.url, headers },
+    (answer) => {
+      res.writeHead(answer.statusCode ?? 502, answer.headers)
+      answer.pipe(res)
+    },
+  )
+  upstream.on('error', () => {
+    if (!res.headersSent) res.writeHead(502)
+    res.end()
   })
-  upstream.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end() })
   res.once('close', () => upstream.destroy())
   req.pipe(upstream)
 })
@@ -42,7 +53,8 @@ server.on('upgrade', (req, socket, head) => {
     lines.push('Connection: Upgrade', 'Upgrade: ' + String(req.headers.upgrade ?? 'websocket'), '', '')
     upstream.write(lines.join('\r\n'))
     if (head && head.length) upstream.write(head)
-    socket.pipe(upstream); upstream.pipe(socket)
+    socket.pipe(upstream)
+    upstream.pipe(socket)
   })
   upstream.on('error', () => socket.destroy())
   socket.on('error', () => upstream.destroy())
@@ -53,5 +65,10 @@ server.on('upgrade', (req, socket, head) => {
 server.listen(port, '127.0.0.1', () => {
   console.log('PUBLIC_ENTRY http://' + host + ':' + port + '/ -> ' + authority)
 })
-process.on('SIGTERM', () => { server.closeAllConnections?.(); server.close(() => process.exit(0)) })
-setInterval(() => { if (served > 0) console.log('proxied=' + served) }, 5000).unref()
+process.on('SIGTERM', () => {
+  server.closeAllConnections?.()
+  server.close(() => process.exit(0))
+})
+setInterval(() => {
+  if (served > 0) console.log('proxied=' + served)
+}, 5000).unref()

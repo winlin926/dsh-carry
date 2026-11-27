@@ -145,7 +145,10 @@ async function waitForHealth(baseUrl, child) {
 }
 
 function tailLogs(limit = 12) {
-  return logs.slice(-limit).map((entry) => `[${entry.stream}] ${entry.text}`).join('\n')
+  return logs
+    .slice(-limit)
+    .map((entry) => `[${entry.stream}] ${entry.text}`)
+    .join('\n')
 }
 
 async function verifyDiscovery(baseUrl, dataDir) {
@@ -178,7 +181,10 @@ async function verifyDiscovery(baseUrl, dataDir) {
     return body.name
   })
   check('well-known: version 匹配契约正则', () => {
-    assert(typeof body.version === 'string' && /^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$/.test(body.version), `version 为 ${JSON.stringify(body.version)}。`)
+    assert(
+      typeof body.version === 'string' && /^[0-9A-Za-z][0-9A-Za-z.+_-]{0,31}$/.test(body.version),
+      `version 为 ${JSON.stringify(body.version)}。`,
+    )
     return body.version
   })
   check('well-known: capabilities 含 pairing 且都在 v2 白名单内', () => {
@@ -210,7 +216,10 @@ async function verifyDiscovery(baseUrl, dataDir) {
     return node.id
   })
   check('well-known: node.fingerprint 为 32 位小写 hex', () => {
-    assert(/^[a-f0-9]{32}$/.test(node.fingerprint), `node.fingerprint 为 ${JSON.stringify(node.fingerprint)}，期望 32 位小写 hex。`)
+    assert(
+      /^[a-f0-9]{32}$/.test(node.fingerprint),
+      `node.fingerprint 为 ${JSON.stringify(node.fingerprint)}，期望 32 位小写 hex。`,
+    )
     return node.fingerprint
   })
   check('well-known: node.publicKey 为 Ed25519 SPKI DER 且 sha256 自洽', () => {
@@ -224,8 +233,14 @@ async function verifyDiscovery(baseUrl, dataDir) {
     const key = createPublicKey({ key: der, format: 'der', type: 'spki' })
     assert(key.asymmetricKeyType === 'ed25519', `node.publicKey 不是 Ed25519（${key.asymmetricKeyType}）。`)
     const digest = sha256(der)
-    assert(base64url(digest) === node.id, `sha256(SPKI DER) 的 base64url 与 node.id 不一致：${base64url(digest)} != ${node.id}。`)
-    assert(fingerprintOf(digest) === node.fingerprint, `sha256(SPKI DER) 前 16 字节与 node.fingerprint 不一致：${fingerprintOf(digest)} != ${node.fingerprint}。`)
+    assert(
+      base64url(digest) === node.id,
+      `sha256(SPKI DER) 的 base64url 与 node.id 不一致：${base64url(digest)} != ${node.id}。`,
+    )
+    assert(
+      fingerprintOf(digest) === node.fingerprint,
+      `sha256(SPKI DER) 前 16 字节与 node.fingerprint 不一致：${fingerprintOf(digest)} != ${node.fingerprint}。`,
+    )
     return { algorithm: key.asymmetricKeyType, digest: fingerprintOf(digest) }
   })
 
@@ -237,7 +252,10 @@ async function verifyDiscovery(baseUrl, dataDir) {
     const identity = JSON.parse(text)
     assert(identity.version === 1, `node-identity.json 的 version 为 ${JSON.stringify(identity.version)}。`)
     assert(identity.algorithm === 'ed25519', `algorithm 为 ${JSON.stringify(identity.algorithm)}。`)
-    assert(typeof identity.publicKey === 'string' && identity.publicKey === node.publicKey, 'node-identity.json 的 publicKey 与发现文档不一致。')
+    assert(
+      typeof identity.publicKey === 'string' && identity.publicKey === node.publicKey,
+      'node-identity.json 的 publicKey 与发现文档不一致。',
+    )
     assert(!('privateKey' in identity), 'node-identity.json 不应包含私钥（只存公钥）。')
     if (process.platform !== 'win32') {
       const mode = (await stat(identityPath)).mode & 0o777
@@ -284,7 +302,10 @@ async function verifyHttp(baseUrl) {
       }),
     })
     const text = await response.text()
-    assert(response.status === 201, `注册状态码 ${response.status}，期望 201（不得要求注册令牌）：${text.slice(0, 300)}`)
+    assert(
+      response.status === 201,
+      `注册状态码 ${response.status}，期望 201（不得要求注册令牌）：${text.slice(0, 300)}`,
+    )
     const body = JSON.parse(text)
     assert(typeof body.credential === 'string' && body.credential.length > 0, '注册响应缺少 credential。')
     assert(body.host && /^[A-Za-z0-9_-]{43}$/.test(body.host.hostId), '注册响应缺少合法的 host.hostId。')
@@ -326,7 +347,10 @@ async function main() {
       const response = await fetch(baseUrl + WELL_KNOWN)
       assert(response.status === 200, `重启后发现端点状态码 ${response.status}。`)
       const body = await response.json()
-      assert(body.node && body.node.id === discovery.node.id, `重启后 node.id 由 ${discovery.node.id} 变为 ${body.node?.id}。`)
+      assert(
+        body.node && body.node.id === discovery.node.id,
+        `重启后 node.id 由 ${discovery.node.id} 变为 ${body.node?.id}。`,
+      )
       return { nodeId: body.node.id }
     })
   } catch (error) {
@@ -343,7 +367,8 @@ async function main() {
   }
 
   if (!result.ok) {
-    result.note = '若当前工作树尚未合并 B（服务端）的 v2 实现，protocol:2 / 无扁平字段 / /v1/config 等断言失败是预期的；请合并后复跑。'
+    result.note =
+      '若当前工作树尚未合并 B（服务端）的 v2 实现，protocol:2 / 无扁平字段 / /v1/config 等断言失败是预期的；请合并后复跑。'
   }
   console.log(JSON.stringify(result, null, 2))
   process.exitCode = result.ok ? 0 : 1

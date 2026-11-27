@@ -232,7 +232,10 @@ test('expired tickets and expired pairing requests are rejected', async () => {
       () => service.clientConfirm(claim.requestId, claim.pairingToken, node.baseUrl),
       () => service.clientReject(claim.requestId, claim.pairingToken),
     ]) {
-      assert.throws(check, (error: unknown) => error instanceof ApiError && error.status === 410 && error.code === 'PAIRING_EXPIRED')
+      assert.throws(
+        check,
+        (error: unknown) => error instanceof ApiError && error.status === 410 && error.code === 'PAIRING_EXPIRED',
+      )
     }
   } finally {
     await node.stop()
@@ -392,25 +395,56 @@ test('the relay page retries the config read and follows server pairing status e
     const expiresAt = now + 5_000
     let timerId = 0
     const timers = new Set<number>()
-    const elements = new Map<string, { textContent: string; disabled: boolean; hidden: boolean; onclick?: () => void }>()
+    const elements = new Map<
+      string,
+      { textContent: string; disabled: boolean; hidden: boolean; onclick?: () => void }
+    >()
     const get = (id: string) => {
       if (!elements.has(id)) elements.set(id, { textContent: '', disabled: false, hidden: false })
       return elements.get(id)!
     }
     const document = Object.assign(new EventTarget(), {
-      documentElement: { lang: '' }, hidden: false, getElementById: get, querySelectorAll: () => [],
+      documentElement: { lang: '' },
+      hidden: false,
+      getElementById: get,
+      querySelectorAll: () => [],
     })
     const window = new EventTarget()
-    const location = { hash: `#v=1&ticket=${ticket}&key=${key}`, pathname: '/pair', search: '', replace: (path: string) => { opened = path } }
+    const location = {
+      hash: `#v=1&ticket=${ticket}&key=${key}`,
+      pathname: '/pair',
+      search: '',
+      replace: (path: string) => {
+        opened = path
+      },
+    }
     const calls: string[] = []
     let opened = ''
     await runInNewContext(script, {
-      document, window, location, URLSearchParams, AbortController, crypto, atob, btoa,
+      document,
+      window,
+      location,
+      URLSearchParams,
+      AbortController,
+      crypto,
+      atob,
+      btoa,
       navigator: { language: 'en-US' },
-      history: { replaceState: () => { location.hash = '' } },
+      history: {
+        replaceState: () => {
+          location.hash = ''
+        },
+      },
       localStorage: { getItem: () => null, setItem: () => {} },
-      Date: class extends Date { static now() { return now + (outcome === 'expired' ? -120_000 : 120_000) } },
-      setTimeout: () => { timers.add(++timerId); return timerId },
+      Date: class extends Date {
+        static now() {
+          return now + (outcome === 'expired' ? -120_000 : 120_000)
+        }
+      },
+      setTimeout: () => {
+        timers.add(++timerId)
+        return timerId
+      },
       clearTimeout: (id: number) => timers.delete(id),
       fetch: async (path: string, options: RequestInit) => {
         calls.push(path)
@@ -433,7 +467,7 @@ test('the relay page retries the config read and follows server pairing status e
         throw new Error(`Unexpected request ${path}`)
       },
     })
-    const flush = () => new Promise<void>(resolve => setImmediate(resolve))
+    const flush = () => new Promise<void>((resolve) => setImmediate(resolve))
     assert.equal(location.hash, `#v=1&ticket=${ticket}&key=${key}`)
     assert.deepEqual(calls, ['/v1/config'])
     assert.equal(get('retry').hidden, false)
@@ -471,7 +505,14 @@ test('the relay page retries the config read and follows server pairing status e
     document.hidden = false
     document.dispatchEvent(new Event('visibilitychange'))
     await flush()
-    assert.deepEqual(calls, ['/v1/config', '/v1/config', claimPath, confirmPath, statusPath, ...(outcome === 'complete' ? ['/v1/hosts'] : [])])
+    assert.deepEqual(calls, [
+      '/v1/config',
+      '/v1/config',
+      claimPath,
+      confirmPath,
+      statusPath,
+      ...(outcome === 'complete' ? ['/v1/hosts'] : []),
+    ])
     assert.equal(opened, outcome === 'complete' ? '/' : '')
     assert.equal(get('approve').disabled, true)
     assert.equal(get('retry').hidden, true)

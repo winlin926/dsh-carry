@@ -16,7 +16,9 @@ export function createBootScreen(language: 'zh' | 'en' = 'zh') {
     parent?.append(element)
     return element
   }
-  const write = (element: HTMLElement, text: string) => { if (element.textContent !== text) element.textContent = text }
+  const write = (element: HTMLElement, text: string) => {
+    if (element.textContent !== text) element.textContent = text
+  }
   const style = document.createElement('style')
   style.id = 'dsh-rc-boot-style'
   style.textContent = `#dsh-rc-boot-screen{position:fixed;inset:0;z-index:2147483645;display:grid;place-items:center;box-sizing:border-box;padding:64px max(20px,env(safe-area-inset-right)) 64px max(20px,env(safe-area-inset-left));background:Canvas;color:CanvasText;color-scheme:light dark;font:14px/1.5 system-ui,sans-serif;pointer-events:none;transition:opacity 160ms ease-out}
@@ -54,7 +56,11 @@ export function createBootScreen(language: 'zh' | 'en' = 'zh') {
   theme.setAttribute('aria-label', en ? 'Startup theme' : '启动页配色')
   const themeKey = 'dsh-rc-boot-theme'
   let selected = 'system'
-  try { selected = window.localStorage?.getItem(themeKey) ?? 'system' } catch { /* storage is optional */ }
+  try {
+    selected = window.localStorage?.getItem(themeKey) ?? 'system'
+  } catch {
+    /* storage is optional */
+  }
   if (selected !== 'light' && selected !== 'dark') selected = 'system'
   const buttons = (['system', 'light', 'dark'] as const).map((value, index) => {
     const button = make('button', '', theme) as HTMLButtonElement
@@ -70,7 +76,11 @@ export function createBootScreen(language: 'zh' | 'en' = 'zh') {
     button.title = label
     button.onclick = () => {
       selectTheme(value)
-      try { window.localStorage?.setItem(themeKey, value) } catch { /* storage is optional */ }
+      try {
+        window.localStorage?.setItem(themeKey, value)
+      } catch {
+        /* storage is optional */
+      }
     }
     return { value, button }
   })
@@ -82,7 +92,9 @@ export function createBootScreen(language: 'zh' | 'en' = 'zh') {
   const content = make('div', 'content', root)
   make('div', 'whale', content).setAttribute('aria-hidden', 'true')
   make('div', 'brand', content).textContent = 'DeepSeek Harness'
-  const stage = make('div', 'stage', content), count = make('div', 'count', content), detail = make('div', 'detail', content)
+  const stage = make('div', 'stage', content),
+    count = make('div', 'count', content),
+    detail = make('div', 'detail', content)
   const track = make('div', 'track', content)
   track.setAttribute('aria-hidden', 'true')
   const fill = make('div', 'fill', track)
@@ -103,7 +115,9 @@ export function createBootScreen(language: 'zh' | 'en' = 'zh') {
     mount,
     paint(frame: BootFrame) {
       mount()
-      write(stage, frame.stage); write(count, frame.count ?? ''); write(detail, frame.detail ?? '')
+      write(stage, frame.stage)
+      write(count, frame.count ?? '')
+      write(detail, frame.detail ?? '')
       root.dataset.ready = String(!!frame.complete)
       theme.style.display = frame.complete ? 'none' : ''
       track.style.display = frame.progress === null ? 'none' : ''
@@ -111,8 +125,16 @@ export function createBootScreen(language: 'zh' | 'en' = 'zh') {
       fill.style.width = typeof frame.progress === 'number' ? frame.progress * 100 + '%' : ''
       write(live, frame.announcement)
     },
-    hideControls() { theme.remove() },
-    fade() { root.dataset.fade = 'true' },
-    remove() { root.remove(); live.remove(); style.remove() },
+    hideControls() {
+      theme.remove()
+    },
+    fade() {
+      root.dataset.fade = 'true'
+    },
+    remove() {
+      root.remove()
+      live.remove()
+      style.remove()
+    },
   }
 }

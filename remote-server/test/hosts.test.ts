@@ -2,10 +2,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 import WebSocket from 'ws'
-import {
-  encodeTunnelFrame,
-  type TunnelHelloFrame,
-} from '../dist/src/remote/tunnel-protocol.js'
+import { encodeTunnelFrame, type TunnelHelloFrame } from '../dist/src/remote/tunnel-protocol.js'
 import {
   api,
   completePairing,
@@ -39,19 +36,17 @@ test('host registration returns a one-time credential and persists only its hash
     assert.equal(result.text.includes('credential'), true)
     assert.equal(/identityKey/u.test(result.text), false, 'registration response must not echo the identity key')
 
-    const row: any = node.app.db
-      .prepare('SELECT * FROM hosts WHERE device_id = ?')
-      .get(registration.deviceId)
+    const row: any = node.app.db.prepare('SELECT * FROM hosts WHERE device_id = ?').get(registration.deviceId)
     assert.ok(row, 'host row must be persisted')
     assert.equal(row.credential_hash, sha256Hex(result.json.credential))
     assert.notEqual(row.credential_hash, result.json.credential)
     assert.equal(row.identity_key, identityKey)
 
     const migrations: any[] = node.app.db.prepare('SELECT version, name FROM schema_migrations').all()
-    assert.ok(migrations.some(entry => entry.version === 1))
+    assert.ok(migrations.some((entry) => entry.version === 1))
 
     const plaintextLeak = node.app.db
-      .prepare("SELECT COUNT(*) AS hits FROM hosts WHERE credential_hash = ? OR credential_hash LIKE ?")
+      .prepare('SELECT COUNT(*) AS hits FROM hosts WHERE credential_hash = ? OR credential_hash LIKE ?')
       .get(result.json.credential, `%${result.json.credential}%`) as any
     assert.equal(plaintextLeak.hits, 0, 'the plaintext credential must never be stored')
   } finally {
@@ -87,17 +82,56 @@ test('re-registering a device id or identity key fails closed', async () => {
 test('host registration rejects hostile bodies with 4xx responses', async () => {
   const node = await startNode()
   try {
-    const cases: Array<{ name: string; body?: unknown; rawBody?: string; contentType?: string; headers?: Record<string, string>; status: number; code?: string }> = [
-      { name: 'missing identityKey', body: { deviceId: randomDeviceId(), name: 'h', clientVersion: '1' }, status: 400, code: 'INVALID_REQUEST' },
+    const cases: Array<{
+      name: string
+      body?: unknown
+      rawBody?: string
+      contentType?: string
+      headers?: Record<string, string>
+      status: number
+      code?: string
+    }> = [
+      {
+        name: 'missing identityKey',
+        body: { deviceId: randomDeviceId(), name: 'h', clientVersion: '1' },
+        status: 400,
+        code: 'INVALID_REQUEST',
+      },
       { name: 'bad identityKey', body: hostRegistration({ identityKey: 'not-a-key' }), status: 400 },
-      { name: 'short identityKey', body: hostRegistration({ identityKey: randomIdentityKey().slice(0, 39) }), status: 400 },
-      { name: 'identityKey is not SPKI DER', body: hostRegistration({ identityKey: 'A'.repeat(59) }), status: 400, code: 'INVALID_IDENTITY_KEY' },
+      {
+        name: 'short identityKey',
+        body: hostRegistration({ identityKey: randomIdentityKey().slice(0, 39) }),
+        status: 400,
+      },
+      {
+        name: 'identityKey is not SPKI DER',
+        body: hostRegistration({ identityKey: 'A'.repeat(59) }),
+        status: 400,
+        code: 'INVALID_IDENTITY_KEY',
+      },
       { name: 'empty name', body: hostRegistration({ name: '' }), status: 400 },
       { name: 'overlong name', body: hostRegistration({ name: 'x'.repeat(200) }), status: 400 },
       { name: 'unknown field', body: { ...hostRegistration(), isAdmin: true }, status: 400 },
-      { name: 'malformed json', rawBody: '{not json', contentType: 'application/json', status: 400, code: 'INVALID_JSON' },
-      { name: 'wrong content type', rawBody: JSON.stringify(hostRegistration()), contentType: 'text/plain', status: 415, code: 'UNSUPPORTED_MEDIA_TYPE' },
-      { name: 'oversized body', body: hostRegistration({ name: 'x'.repeat(70_000) }), status: 413, code: 'PAYLOAD_TOO_LARGE' },
+      {
+        name: 'malformed json',
+        rawBody: '{not json',
+        contentType: 'application/json',
+        status: 400,
+        code: 'INVALID_JSON',
+      },
+      {
+        name: 'wrong content type',
+        rawBody: JSON.stringify(hostRegistration()),
+        contentType: 'text/plain',
+        status: 415,
+        code: 'UNSUPPORTED_MEDIA_TYPE',
+      },
+      {
+        name: 'oversized body',
+        body: hostRegistration({ name: 'x'.repeat(70_000) }),
+        status: 413,
+        code: 'PAYLOAD_TOO_LARGE',
+      },
     ]
     for (const item of cases) {
       const result = await api(node.baseUrl, 'POST', '/v1/hosts', {
@@ -163,8 +197,14 @@ test('two registered Hosts are isolated from each other', async () => {
     // Device view: each cookie only lists its own Host relationship.
     const aHosts = await api(node.baseUrl, 'GET', '/v1/hosts', { cookie: a.cookie })
     const bHosts = await api(node.baseUrl, 'GET', '/v1/hosts', { cookie: b.cookie })
-    assert.deepEqual(aHosts.json.hosts.map((host: any) => host.hostId), [a.hostId])
-    assert.deepEqual(bHosts.json.hosts.map((host: any) => host.hostId), [b.hostId])
+    assert.deepEqual(
+      aHosts.json.hosts.map((host: any) => host.hostId),
+      [a.hostId],
+    )
+    assert.deepEqual(
+      bHosts.json.hosts.map((host: any) => host.hostId),
+      [b.hostId],
+    )
 
     // Device A cannot revoke a relationship it does not own.
     const crossRevoke = await api(node.baseUrl, 'DELETE', `/v1/hosts/${b.hostId}/devices/${a.client.deviceId}`, {
@@ -214,7 +254,7 @@ test('two registered Hosts are isolated from each other', async () => {
       ws.once('open', () => resolve())
       ws.once('error', (error: Error) => reject(error))
     })
-    const closed = new Promise<number>(resolve => ws.once('close', code => resolve(code as number)))
+    const closed = new Promise<number>((resolve) => ws.once('close', (code) => resolve(code as number)))
     ws.send(
       encodeTunnelFrame({
         t: 'hello',
@@ -262,7 +302,7 @@ test('host registration is rate limited', async () => {
       }
     }
     assert.ok(statuses.includes(429), `expected a 429 in ${statuses.join(',')}`)
-    assert.ok(statuses.filter(status => status === 201).length <= 10)
+    assert.ok(statuses.filter((status) => status === 201).length <= 10)
   } finally {
     await node.stop()
   }
@@ -281,7 +321,9 @@ test('DELETE /v1/hosts/:hostId unregisters the caller and purges its data', asyn
     assert.equal(asset.status, 201)
 
     const before: any = node.app.db
-      .prepare('SELECT (SELECT COUNT(*) FROM relationships) relationships, (SELECT COUNT(*) FROM device_sessions) sessions, (SELECT COUNT(*) FROM assets) assets')
+      .prepare(
+        'SELECT (SELECT COUNT(*) FROM relationships) relationships, (SELECT COUNT(*) FROM device_sessions) sessions, (SELECT COUNT(*) FROM assets) assets',
+      )
       .get()
     assert.ok(Number(before.relationships) >= 1, 'pairing must leave a relationship behind')
     assert.ok(Number(before.assets) >= 1, 'the asset must be stored before the deletion')
@@ -313,7 +355,10 @@ test('a host may only unregister itself', async () => {
     const foreign = await api(node.baseUrl, 'DELETE', `/v1/hosts/${first.host.hostId}`, { token: second.credential })
     assert.equal(foreign.status, 403)
     assert.equal(foreign.json.error.code, 'FORBIDDEN')
-    assert.ok(node.app.db.prepare('SELECT 1 FROM hosts WHERE host_id = ?').get(first.host.hostId), 'the target host must survive')
+    assert.ok(
+      node.app.db.prepare('SELECT 1 FROM hosts WHERE host_id = ?').get(first.host.hostId),
+      'the target host must survive',
+    )
   } finally {
     await node.stop()
   }
@@ -356,7 +401,9 @@ test('the same identity may register again after unregistering', async () => {
     const first = await api(node.baseUrl, 'POST', '/v1/hosts', { body: registration })
     assert.equal(first.status, 201)
 
-    const removed = await api(node.baseUrl, 'DELETE', `/v1/hosts/${first.json.host.hostId}`, { token: first.json.credential })
+    const removed = await api(node.baseUrl, 'DELETE', `/v1/hosts/${first.json.host.hostId}`, {
+      token: first.json.credential,
+    })
     assert.equal(removed.status, 204)
 
     const again = await api(node.baseUrl, 'POST', '/v1/hosts', { body: registration })

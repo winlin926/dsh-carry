@@ -73,6 +73,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "node -e \"require('node:fs').rmSync('lib', { recursive: true, force: true })\" && tsc && tsdown",
+    "lint": "biome check .",
+    "format": "biome format --write .",
     "test": "vitest run",
     "pack:check": "npm pack --dry-run",
     "prepack": "npm run build",
@@ -100,6 +102,7 @@
     }
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.6.9",
     "@deepseek-ai/cordis": "~4.1.0",
     "@deepseek-ai/dsh": "0.2.2-rc.3",
     "@deepseek-ai/dsh-client-connection": "0.2.2-rc.3",

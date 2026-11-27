@@ -7,5 +7,7 @@ export function localFilePath(href: string): string | undefined {
     if (!/^[a-zA-Z]:\//.test(path) && !path.startsWith('/')) return undefined
     if (path.split('/').includes('..')) return undefined
     return path
-  } catch { return undefined }
+  } catch {
+    return undefined
+  }
 }

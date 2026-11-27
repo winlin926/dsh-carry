@@ -9,77 +9,166 @@ import { Gateway, MANAGE_PATH, closeCode, safePath } from '../src/gateway.js'
 import { PairingService } from '../src/pairing.js'
 import { bootScript } from '../src/boot.js'
 const cleanup: Array<() => Promise<unknown> | void> = []
-afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn() })
+afterEach(async () => {
+  for (const fn of cleanup.splice(0).reverse()) await fn()
+})
 async function fixture() {
-  const folder = mkdtempSync(join(tmpdir(), 'dsh-rc-gateway-')); cleanup.push(() => rmSync(folder, { recursive: true, force: true }))
-  let gateway: Gateway; let calls = 0
+  const folder = mkdtempSync(join(tmpdir(), 'dsh-rc-gateway-'))
+  cleanup.push(() => rmSync(folder, { recursive: true, force: true }))
+  let gateway: Gateway
+  let calls = 0
   const reports: Array<{ report: Record<string, unknown>; device?: { id: string; name: string } }> = []
   const upstreamCompression: Array<string> = []
-  const pairing = new PairingService({ file: join(folder, 'devices.json'), onRevoke: id => gateway.revoke(id) })
+  const pairing = new PairingService({ file: join(folder, 'devices.json'), onRevoke: (id) => gateway.revoke(id) })
   const upstream = createServer((req, res) => {
     calls++
-    if (req.url?.startsWith('/api/sse')) { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.write('id: 1\ndata: 第一条\n\n'); const timer = setInterval(() => res.write('event: tick\ndata: second\n\n'), 50); res.once('close', () => clearInterval(timer)); return }
-    if (req.url === '/api/hold') { res.writeHead(200); res.write('start'); return }
+    if (req.url?.startsWith('/api/sse')) {
+      res.writeHead(200, { 'content-type': 'text/event-stream' })
+      res.write('id: 1\ndata: 第一条\n\n')
+      const timer = setInterval(() => res.write('event: tick\ndata: second\n\n'), 50)
+      res.once('close', () => clearInterval(timer))
+      return
+    }
+    if (req.url === '/api/hold') {
+      res.writeHead(200)
+      res.write('start')
+      return
+    }
     if (req.url === '/api/interrupted-asset') {
       res.writeHead(200, { 'content-type': 'text/javascript', 'content-length': 1024 * 1024 })
       res.write('window.partial = true;')
       setImmediate(() => res.destroy())
       return
     }
-    if (req.url === '/api/upload') { let size = 0; req.on('data', chunk => size += chunk.length); req.on('end', () => res.end(JSON.stringify({ size }))); return }
+    if (req.url === '/api/upload') {
+      let size = 0
+      req.on('data', (chunk) => (size += chunk.length))
+      req.on('end', () => res.end(JSON.stringify({ size })))
+      return
+    }
     // A cached asset: the Host now offers an ETag and answers 304 for a phone that already has it.
     if (req.url === '/api/asset') {
       const etag = '"asset-1"'
-      if (req.headers['if-none-match'] === etag) { res.writeHead(304, { etag }); res.end(); return }
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', etag }); res.end('<p>one</p>'); return
+      if (req.headers['if-none-match'] === etag) {
+        res.writeHead(304, { etag })
+        res.end()
+        return
+      }
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', etag })
+      res.end('<p>one</p>')
+      return
     }
-    res.setHeader('set-cookie', 'host-secret=should-never-reach-client'); res.end(JSON.stringify({ cookie: req.headers.cookie, origin: req.headers.origin }))
+    res.setHeader('set-cookie', 'host-secret=should-never-reach-client')
+    res.end(JSON.stringify({ cookie: req.headers.cookie, origin: req.headers.origin }))
   })
-  const wss = new WebSocketServer({ server: upstream, perMessageDeflate: true }); wss.on('connection', ws => { upstreamCompression.push(String(ws.extensions)); ws.on('message', (data, binary) => { if (String(data) === 'close-without-code') { ws.close(); return } ws.send(data, { binary }) }) })
-  await new Promise<void>(resolve => upstream.listen(0, '127.0.0.1', resolve))
-  cleanup.push(async () => { for (const client of wss.clients) client.terminate(); wss.close(); upstream.closeAllConnections(); await new Promise<void>(resolve => upstream.close(() => resolve())) })
+  const wss = new WebSocketServer({ server: upstream, perMessageDeflate: true })
+  wss.on('connection', (ws) => {
+    upstreamCompression.push(String(ws.extensions))
+    ws.on('message', (data, binary) => {
+      if (String(data) === 'close-without-code') {
+        ws.close()
+        return
+      }
+      ws.send(data, { binary })
+    })
+  })
+  await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve))
+  cleanup.push(async () => {
+    for (const client of wss.clients) client.terminate()
+    wss.close()
+    upstream.closeAllConnections()
+    await new Promise<void>((resolve) => upstream.close(() => resolve()))
+  })
   const port = (upstream.address() as { port: number }).port
-  gateway = new Gateway({ pairing, upstreamPort: port, upstreamCookie: () => 'host-private=secret', manage: async (input, local) => { if (input.action === 'approve' && !local) throw new Error('本机确认'); return { local } }, index: async () => '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Host</title></head><body><div id="root"></div></body></html>', boot: context => bootScript({ ...context, version: '0.7.1' }), onBootReport: (report, device) => reports.push({ report, device }) })
-  await gateway.listen('127.0.0.1'); cleanup.push(() => gateway.close())
+  gateway = new Gateway({
+    pairing,
+    upstreamPort: port,
+    upstreamCookie: () => 'host-private=secret',
+    manage: async (input, local) => {
+      if (input.action === 'approve' && !local) throw new Error('本机确认')
+      return { local }
+    },
+    index: async () =>
+      '<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>Host</title></head><body><div id="root"></div></body></html>',
+    boot: (context) => bootScript({ ...context, version: '0.7.1' }),
+    onBootReport: (report, device) => reports.push({ report, device }),
+  })
+  await gateway.listen('127.0.0.1')
+  cleanup.push(() => gateway.close())
   const base = `http://127.0.0.1:${gateway.port}`
-  const claim = pairing.request(pairing.issue().token, 'Android'); pairing.approve(claim.id)
+  const claim = pairing.request(pairing.issue().token, 'Android')
+  pairing.approve(claim.id)
   const credential = pairing.claim(claim.id, claim.key).credential!
-  return { base, pairing, gateway, credential, folder, calls: () => calls, cookie: `dsh_rc=${credential}`, reports, upstreamCompression }
+  return {
+    base,
+    pairing,
+    gateway,
+    credential,
+    folder,
+    calls: () => calls,
+    cookie: `dsh_rc=${credential}`,
+    reports,
+    upstreamCompression,
+  }
 }
 describe('gateway admission and transport', () => {
   it('refuses unauthenticated requests without reaching the Host', async () => {
-    const f = await fixture(); const response = await fetch(`${f.base}/api/secrets`)
-    expect(response.status).toBe(403); expect(f.calls()).toBe(0)
+    const f = await fixture()
+    const response = await fetch(`${f.base}/api/secrets`)
+    expect(response.status).toBe(403)
+    expect(f.calls()).toBe(0)
   })
   it('rejects Host spoofing and cross-origin requests', async () => {
     const f = await fixture()
-    const spoofed = await new Promise<number | undefined>(resolve => {
-      const req = request(`${f.base}/api/x`, { headers: { cookie: f.cookie, host: 'evil.example' } }, response => { response.resume(); resolve(response.statusCode) }); req.end()
+    const spoofed = await new Promise<number | undefined>((resolve) => {
+      const req = request(`${f.base}/api/x`, { headers: { cookie: f.cookie, host: 'evil.example' } }, (response) => {
+        response.resume()
+        resolve(response.statusCode)
+      })
+      req.end()
     })
     expect(spoofed).toBe(403)
-    expect((await fetch(`${f.base}/api/x`, { headers: { cookie: f.cookie, origin: 'https://evil.example' } })).status).toBe(403)
+    expect(
+      (await fetch(`${f.base}/api/x`, { headers: { cookie: f.cookie, origin: 'https://evil.example' } })).status,
+    ).toBe(403)
     expect(f.calls()).toBe(0)
   })
   it('never forwards device cookies or returns Host cookies', async () => {
-    const f = await fixture(); const response = await fetch(`${f.base}/api/data`, { headers: { cookie: f.cookie, 'x-forwarded-host': 'evil.example' } })
+    const f = await fixture()
+    const response = await fetch(`${f.base}/api/data`, {
+      headers: { cookie: f.cookie, 'x-forwarded-host': 'evil.example' },
+    })
     const data = await response.json()
-    expect(data.cookie).toBe('host-private=secret'); expect(data.cookie).not.toContain(f.credential)
+    expect(data.cookie).toBe('host-private=secret')
+    expect(data.cookie).not.toContain(f.credential)
     expect(response.headers.get('set-cookie')).not.toContain('host-secret')
   })
   it('serves a gated official shell whose boot hooks load before the Host scripts', async () => {
-    const f = await fixture(), response = await fetch(f.base, { headers: { cookie: f.cookie } }), html = await response.text()
-    expect(html).toContain('<div id="root"></div>'); expect(html).toContain('<script src="/rc/boot.js"></script>'); expect(html).not.toContain(f.credential)
+    const f = await fixture(),
+      response = await fetch(f.base, { headers: { cookie: f.cookie } }),
+      html = await response.text()
+    expect(html).toContain('<div id="root"></div>')
+    expect(html).toContain('<script src="/rc/boot.js"></script>')
+    expect(html).not.toContain(f.credential)
     const boot = await (await fetch(`${f.base}/rc/boot.js`, { headers: { cookie: f.cookie } })).text()
-    expect(boot).toContain('__DSH_TRANSPORT__'); expect(boot).toContain('__DSH_REMOTE_CONTROL__')
+    expect(boot).toContain('__DSH_TRANSPORT__')
+    expect(boot).toContain('__DSH_REMOTE_CONTROL__')
   })
   it('opens a complete local HTML site in an isolated temporary preview', async () => {
-    const f = await fixture(), site = join(f.folder, 'site')
+    const f = await fixture(),
+      site = join(f.folder, 'site')
     mkdirSync(join(site, 'assets'), { recursive: true })
-    writeFileSync(join(site, 'index.html'), '<link rel="stylesheet" href="assets/site.css"><script type="module" src="assets/site.js"></script>')
+    writeFileSync(
+      join(site, 'index.html'),
+      '<link rel="stylesheet" href="assets/site.css"><script type="module" src="assets/site.js"></script>',
+    )
     writeFileSync(join(site, 'assets', 'site.css'), 'body { color: rgb(1, 2, 3) }')
     writeFileSync(join(site, 'assets', 'site.js'), 'export const loaded = true')
     writeFileSync(join(f.folder, 'outside.txt'), 'outside')
-    const opened = await fetch(`${f.base}/rc/workspace-file?p=${encodeURIComponent(join(site, 'index.html'))}`, { headers: { cookie: f.cookie }, redirect: 'manual' })
+    const opened = await fetch(`${f.base}/rc/workspace-file?p=${encodeURIComponent(join(site, 'index.html'))}`, {
+      headers: { cookie: f.cookie },
+      redirect: 'manual',
+    })
     expect(opened.status).toBe(303)
     const location = opened.headers.get('location')!
     expect(location).toMatch(/^\/rc\/workspace-preview\/[A-Za-z0-9_-]{43}\/index\.html$/)
@@ -93,31 +182,51 @@ describe('gateway admission and transport', () => {
     expect(html.headers.get('origin-agent-cluster')).toBe('?1')
     const base = location.slice(0, location.lastIndexOf('/'))
     const css = await fetch(`${f.base}${base}/assets/site.css`, { headers: { origin: 'null' } })
-    expect(css.status).toBe(200); expect(css.headers.get('content-type')).toContain('text/css')
+    expect(css.status).toBe(200)
+    expect(css.headers.get('content-type')).toContain('text/css')
     expect(await css.text()).toContain('rgb(1, 2, 3)')
-    expect((await fetch(`${f.base}${base}/assets/site.css`, { headers: { 'sec-fetch-site': 'cross-site', 'sec-fetch-dest': 'style' } })).status).toBe(200)
+    expect(
+      (
+        await fetch(`${f.base}${base}/assets/site.css`, {
+          headers: { 'sec-fetch-site': 'cross-site', 'sec-fetch-dest': 'style' },
+        })
+      ).status,
+    ).toBe(200)
     const module = await fetch(`${f.base}${base}/assets/site.js`, { headers: { origin: 'null' } })
-    expect(module.status).toBe(200); expect(module.headers.get('access-control-allow-origin')).toBe('null')
-    expect((await fetch(`${f.base}${base}/assets/site.js`, { headers: { origin: 'https://evil.example' } })).status).toBe(403)
+    expect(module.status).toBe(200)
+    expect(module.headers.get('access-control-allow-origin')).toBe('null')
+    expect(
+      (await fetch(`${f.base}${base}/assets/site.js`, { headers: { origin: 'https://evil.example' } })).status,
+    ).toBe(403)
     expect((await fetch(`${f.base}${base}/%2e%2e/outside.txt`, { headers: { origin: 'null' } })).status).toBe(404)
     expect((await fetch(`${f.base}${base}/`, { method: 'HEAD', headers: { origin: 'null' } })).status).toBe(404)
     f.pairing.revoke(f.pairing.list()[0]!.id)
     expect((await fetch(f.base + location, { headers: { cookie: f.cookie, origin: 'null' } })).status).toBe(404)
   })
   it('sandboxes SVG workspace files so their scripts cannot use the gateway origin', async () => {
-    const f = await fixture(), file = join(f.folder, 'picture.svg')
+    const f = await fixture(),
+      file = join(f.folder, 'picture.svg')
     writeFileSync(file, '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>')
-    const response = await fetch(`${f.base}/rc/workspace-file?p=${encodeURIComponent(file)}`, { headers: { cookie: f.cookie } })
+    const response = await fetch(`${f.base}/rc/workspace-file?p=${encodeURIComponent(file)}`, {
+      headers: { cookie: f.cookie },
+    })
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toContain('image/svg+xml')
     expect(response.headers.get('content-security-policy')).toBe('sandbox')
   })
   it('rejects oversized files before reading and streams ordinary files with their size', async () => {
-    const f = await fixture(), large = join(f.folder, 'large.bin'), small = join(f.folder, 'message.txt')
+    const f = await fixture(),
+      large = join(f.folder, 'large.bin'),
+      small = join(f.folder, 'message.txt')
     const descriptor = openSync(large, 'w')
-    try { ftruncateSync(descriptor, 48 * 1024 * 1024 + 1) } finally { closeSync(descriptor) }
+    try {
+      ftruncateSync(descriptor, 48 * 1024 * 1024 + 1)
+    } finally {
+      closeSync(descriptor)
+    }
     writeFileSync(small, '手机文件预览')
-    const getFile = (path: string) => fetch(`${f.base}/rc/workspace-file?p=${encodeURIComponent(path)}`, { headers: { cookie: f.cookie } })
+    const getFile = (path: string) =>
+      fetch(`${f.base}/rc/workspace-file?p=${encodeURIComponent(path)}`, { headers: { cookie: f.cookie } })
     expect((await getFile(large)).status).toBe(413)
     expect((await getFile(f.folder)).status).toBe(404)
     const response = await getFile(small)
@@ -125,17 +234,28 @@ describe('gateway admission and transport', () => {
     expect(await response.text()).toBe('手机文件预览')
   })
   it('expires unused preview capabilities and keeps resources inside their real directory', async () => {
-    const f = await fixture(), site = join(f.folder, 'site')
-    mkdirSync(site); writeFileSync(join(site, 'index.html'), '<p>page</p>')
+    const f = await fixture(),
+      site = join(f.folder, 'site')
+    mkdirSync(site)
+    writeFileSync(join(site, 'index.html'), '<p>page</p>')
     writeFileSync(join(f.folder, 'secret.txt'), 'not part of the preview')
     const open = async () => {
-      const response = await fetch(`${f.base}/rc/workspace-file?p=${encodeURIComponent(join(site, 'index.html'))}`, { headers: { cookie: f.cookie }, redirect: 'manual' })
+      const response = await fetch(`${f.base}/rc/workspace-file?p=${encodeURIComponent(join(site, 'index.html'))}`, {
+        headers: { cookie: f.cookie },
+        redirect: 'manual',
+      })
       return response.headers.get('location')!
     }
     const location = await open()
-    vi.useFakeTimers(); vi.setSystemTime(Date.now() + 2 * 60 * 60 * 1000 + 1)
-    try { expect((await fetch(f.base + location)).status).toBe(404) } finally { vi.useRealTimers() }
-    const next = await open(), escaped = next.replace('/index.html', '/%252e%252e/secret.txt')
+    vi.useFakeTimers()
+    vi.setSystemTime(Date.now() + 2 * 60 * 60 * 1000 + 1)
+    try {
+      expect((await fetch(f.base + location)).status).toBe(404)
+    } finally {
+      vi.useRealTimers()
+    }
+    const next = await open(),
+      escaped = next.replace('/index.html', '/%252e%252e/secret.txt')
     expect((await fetch(f.base + escaped)).status).toBe(403)
     const other = next.replace('/index.html', '/%2Fetc%2Fpasswd')
     expect((await fetch(f.base + other)).status).toBe(404)
@@ -143,10 +263,16 @@ describe('gateway admission and transport', () => {
     await expect(fetch(f.base + next)).rejects.toThrow()
   })
   it('retires a preview capability that stays in use past its absolute lifetime', async () => {
-    const f = await fixture(), site = join(f.folder, 'site')
-    mkdirSync(site); writeFileSync(join(site, 'index.html'), '<p>page</p>')
-    const open = await fetch(`${f.base}/rc/workspace-file?p=${encodeURIComponent(join(site, 'index.html'))}`, { headers: { cookie: f.cookie }, redirect: 'manual' })
-    const location = open.headers.get('location')!, issued = Date.now()
+    const f = await fixture(),
+      site = join(f.folder, 'site')
+    mkdirSync(site)
+    writeFileSync(join(site, 'index.html'), '<p>page</p>')
+    const open = await fetch(`${f.base}/rc/workspace-file?p=${encodeURIComponent(join(site, 'index.html'))}`, {
+      headers: { cookie: f.cookie },
+      redirect: 'manual',
+    })
+    const location = open.headers.get('location')!,
+      issued = Date.now()
     vi.useFakeTimers()
     try {
       for (const hours of [1.5, 3, 4.5, 6, 7.5, 9, 10.5]) {
@@ -155,7 +281,9 @@ describe('gateway admission and transport', () => {
       }
       vi.setSystemTime(issued + 12 * 3600_000 + 1)
       expect((await fetch(f.base + location)).status).toBe(404)
-    } finally { vi.useRealTimers() }
+    } finally {
+      vi.useRealTimers()
+    }
     await f.gateway.close()
   })
   it('serves the Host page itself with the boot script instead of a bundled copy', async () => {
@@ -190,7 +318,9 @@ describe('gateway admission and transport', () => {
     expect(head.headers.get('etag')).toBe(etag)
     expect(await head.text()).toBe('')
     // A copy from an older build is not this build.
-    expect((await fetch(`${f.base}/rc/boot.js`, { headers: { cookie: f.cookie, 'if-none-match': '"stale"' } })).status).toBe(200)
+    expect(
+      (await fetch(`${f.base}/rc/boot.js`, { headers: { cookie: f.cookie, 'if-none-match': '"stale"' } })).status,
+    ).toBe(200)
     expect(f.calls()).toBe(0)
   })
   it('sends retired phone-interface links to the Host page, after authorization only', async () => {
@@ -206,12 +336,21 @@ describe('gateway admission and transport', () => {
   it('refuses remote approvals including encoded management paths', async () => {
     const f = await fixture()
     for (const path of [MANAGE_PATH, '/api/%64sh-remote-connect/manage']) {
-      expect((await fetch(f.base + path, { method: 'POST', headers: { cookie: f.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ action: 'approve' }) })).status).toBe(400)
+      expect(
+        (
+          await fetch(f.base + path, {
+            method: 'POST',
+            headers: { cookie: f.cookie, 'content-type': 'application/json' },
+            body: JSON.stringify({ action: 'approve' }),
+          })
+        ).status,
+      ).toBe(400)
     }
     expect(f.calls()).toBe(0)
   })
   it('streams binary uploads without JSON conversion', async () => {
-    const f = await fixture(), data = new Uint8Array(262144).fill(251)
+    const f = await fixture(),
+      data = new Uint8Array(262144).fill(251)
     const response = await fetch(`${f.base}/api/upload`, { method: 'POST', headers: { cookie: f.cookie }, body: data })
     expect(await response.json()).toEqual({ size: data.length })
   })
@@ -224,7 +363,9 @@ describe('gateway admission and transport', () => {
     expect(first.headers.get('etag')).toBe('"asset-1"')
     expect(await first.text()).toBe('<p>one</p>')
     // The phone revalidates with the ETag it kept; the cached copy was this gateway's gzip variant.
-    const cached = await fetch(`${f.base}/api/asset`, { headers: { cookie: f.cookie, 'accept-encoding': 'gzip', 'if-none-match': '"asset-1"' } })
+    const cached = await fetch(`${f.base}/api/asset`, {
+      headers: { cookie: f.cookie, 'accept-encoding': 'gzip', 'if-none-match': '"asset-1"' },
+    })
     expect(cached.status).toBe(304)
     expect(cached.headers.get('content-encoding')).toBeNull()
     expect(cached.headers.get('vary')).toContain('accept-encoding')
@@ -233,16 +374,24 @@ describe('gateway admission and transport', () => {
   it('ends an interrupted asset response instead of leaving the browser waiting', async () => {
     const f = await fixture()
     for (const encoding of ['gzip', 'identity']) {
-      const response = fetch(`${f.base}/api/interrupted-asset`, { headers: { cookie: f.cookie, 'accept-encoding': encoding }, signal: AbortSignal.timeout(1000) }).then(response => response.text())
+      const response = fetch(`${f.base}/api/interrupted-asset`, {
+        headers: { cookie: f.cookie, 'accept-encoding': encoding },
+        signal: AbortSignal.timeout(1000),
+      }).then((response) => response.text())
       await expect(response).rejects.toMatchObject({ name: 'TypeError' })
     }
     expect((await fetch(`${f.base}/api/asset`, { headers: { cookie: f.cookie } })).status).toBe(200)
   })
   it('compresses the WebSocket legs a phone uses to load a long session', async () => {
-    const f = await fixture(), ws = new WebSocket(f.base.replace('http:', 'ws:') + '/api/remote.mux', { headers: { cookie: f.cookie, origin: f.base }, perMessageDeflate: true })
+    const f = await fixture(),
+      ws = new WebSocket(f.base.replace('http:', 'ws:') + '/api/remote.mux', {
+        headers: { cookie: f.cookie, origin: f.base },
+        perMessageDeflate: true,
+      })
     await once(ws, 'open')
     expect(ws.extensions).toContain('permessage-deflate')
-    ws.send('compressed hello'); expect(String((await once(ws, 'message'))[0])).toBe('compressed hello')
+    ws.send('compressed hello')
+    expect(String((await once(ws, 'message'))[0])).toBe('compressed hello')
     await vi.waitFor(() => expect(f.upstreamCompression.join()).toContain('permessage-deflate'))
     ws.close()
   })
@@ -262,49 +411,85 @@ describe('gateway admission and transport', () => {
     expect(f.gateway.route(deviceId)).toBe('lan')
     await fetch(f.base + '/api/data', { headers })
     expect(f.gateway.route(deviceId)).toBe('lan')
-    const closed = once(session, 'close'); session.close(); await closed
+    const closed = once(session, 'close')
+    session.close()
+    await closed
     await vi.waitFor(() => expect(f.gateway.route(deviceId)).toBeUndefined())
     other.close()
   })
   it('forwards WS text and binary, then closes both legs on revocation', async () => {
-    const f = await fixture(), ws = new WebSocket(f.base.replace('http:', 'ws:') + '/api/remote.mux', { headers: { cookie: f.cookie, origin: f.base } })
-    await once(ws, 'open'); ws.send('hello'); expect(String((await once(ws, 'message'))[0])).toBe('hello')
-    const bytes = Buffer.from([0, 128, 255]); ws.send(bytes); expect((await once(ws, 'message'))[0]).toEqual(bytes)
-    const closed = once(ws, 'close'); f.pairing.revoke(f.pairing.list()[0]!.id); await closed
+    const f = await fixture(),
+      ws = new WebSocket(f.base.replace('http:', 'ws:') + '/api/remote.mux', {
+        headers: { cookie: f.cookie, origin: f.base },
+      })
+    await once(ws, 'open')
+    ws.send('hello')
+    expect(String((await once(ws, 'message'))[0])).toBe('hello')
+    const bytes = Buffer.from([0, 128, 255])
+    ws.send(bytes)
+    expect((await once(ws, 'message'))[0]).toEqual(bytes)
+    const closed = once(ws, 'close')
+    f.pairing.revoke(f.pairing.list()[0]!.id)
+    await closed
     expect((await fetch(`${f.base}/api/data`, { headers: { cookie: f.cookie } })).status).toBe(403)
   })
   it('closes the phone with a sendable code when the Host sent an empty close frame', async () => {
-    const f = await fixture(), ws = new WebSocket(f.base.replace('http:', 'ws:') + '/api/remote.mux', { headers: { cookie: f.cookie, origin: f.base } })
-    await once(ws, 'open'); ws.send('close-without-code')
+    const f = await fixture(),
+      ws = new WebSocket(f.base.replace('http:', 'ws:') + '/api/remote.mux', {
+        headers: { cookie: f.cookie, origin: f.base },
+      })
+    await once(ws, 'open')
+    ws.send('close-without-code')
     // The Host's empty frame normalizes to 1005, which `ws` refuses to send: before the fix the
     // throw escaped an EventEmitter callback and took the whole Host process down.
     const [code] = await once(ws, 'close')
     expect(code).toBe(1011)
   })
   it('rejects unpaired WS before opening upstream', async () => {
-    const f = await fixture(), ws = new WebSocket(f.base.replace('http:', 'ws:') + '/api/remote.mux')
-    ws.on('error', () => {}); const [, response] = await once(ws, 'unexpected-response'); expect(response.statusCode).toBe(403); ws.terminate()
+    const f = await fixture(),
+      ws = new WebSocket(f.base.replace('http:', 'ws:') + '/api/remote.mux')
+    ws.on('error', () => {})
+    const [, response] = await once(ws, 'unexpected-response')
+    expect(response.statusCode).toBe(403)
+    ws.terminate()
   })
   it('bridges non-ending SSE incrementally over WS and cancels on revoke', async () => {
-    const f = await fixture(), ws = new WebSocket(f.base.replace('http:', 'ws:') + '/rc/sse?path=%2Fapi%2Fsse', { headers: { cookie: f.cookie, origin: f.base } })
-    const frames: Array<{ type: string; data?: string }> = []; ws.on('message', data => frames.push(JSON.parse(String(data))))
-    await once(ws, 'open'); await new Promise(resolve => setTimeout(resolve, 150))
-    expect(frames.some(frame => frame.type === 'ready')).toBe(true)
-    expect(frames.some(frame => frame.data?.includes('第一条'))).toBe(true)
-    const closed = once(ws, 'close'); f.pairing.revokeAll(); await closed
+    const f = await fixture(),
+      ws = new WebSocket(f.base.replace('http:', 'ws:') + '/rc/sse?path=%2Fapi%2Fsse', {
+        headers: { cookie: f.cookie, origin: f.base },
+      })
+    const frames: Array<{ type: string; data?: string }> = []
+    ws.on('message', (data) => frames.push(JSON.parse(String(data))))
+    await once(ws, 'open')
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(frames.some((frame) => frame.type === 'ready')).toBe(true)
+    expect(frames.some((frame) => frame.data?.includes('第一条'))).toBe(true)
+    const closed = once(ws, 'close')
+    f.pairing.revokeAll()
+    await closed
   })
   it('admits the official plugin SSE path through the authenticated bridge', async () => {
-    const f = await fixture(), ws = new WebSocket(f.base.replace('http:', 'ws:') + '/rc/sse?path=%2Fplugins%2Fevents', { headers: { cookie: f.cookie, origin: f.base } })
-    const frames: Array<{ type: string }> = []; ws.on('message', data => frames.push(JSON.parse(String(data))))
-    await once(ws, 'open'); await new Promise(resolve => setTimeout(resolve, 100))
+    const f = await fixture(),
+      ws = new WebSocket(f.base.replace('http:', 'ws:') + '/rc/sse?path=%2Fplugins%2Fevents', {
+        headers: { cookie: f.cookie, origin: f.base },
+      })
+    const frames: Array<{ type: string }> = []
+    ws.on('message', (data) => frames.push(JSON.parse(String(data))))
+    await once(ws, 'open')
+    await new Promise((resolve) => setTimeout(resolve, 100))
     // This mock endpoint returns non-SSE, so the bridge must reach it then reject it.
-    expect(f.calls()).toBe(1); expect(frames.some(frame => frame.type === 'error')).toBe(true)
+    expect(f.calls()).toBe(1)
+    expect(frames.some((frame) => frame.type === 'error')).toBe(true)
   })
   it('destroys in-flight HTTP and WS when stopping, while keeping authorization', async () => {
-    const f = await fixture(), controller = new AbortController()
+    const f = await fixture(),
+      controller = new AbortController()
     const response = await fetch(`${f.base}/api/hold`, { headers: { cookie: f.cookie }, signal: controller.signal })
-    const completion = response.text(); const failed = completion.catch(() => 'closed')
-    await f.gateway.close(); expect(await failed).toBe('closed'); expect(f.pairing.authenticate(f.credential)).toBeDefined()
+    const completion = response.text()
+    const failed = completion.catch(() => 'closed')
+    await f.gateway.close()
+    expect(await failed).toBe('closed')
+    expect(f.pairing.authenticate(f.credential)).toBeDefined()
   })
   it('does not expose the public-domain health identity on a loopback-only gateway', async () => {
     const f = await fixture()
@@ -313,9 +498,33 @@ describe('gateway admission and transport', () => {
   it('accepts boot diagnostics from unpaired devices and marks the reporter only when paired', async () => {
     const f = await fixture()
     const json = { 'content-type': 'application/json' }
-    expect((await fetch(f.base + '/rc/boot-report', { method: 'POST', headers: json, body: JSON.stringify({ errors: ['资源加载失败: <script> x'] }) })).status).toBe(204)
-    expect((await fetch(f.base + '/rc/boot-report', { method: 'POST', headers: { ...json, origin: f.base, cookie: f.cookie }, body: JSON.stringify({ errors: [] }) })).status).toBe(204)
-    expect((await fetch(f.base + '/rc/boot-report', { method: 'POST', headers: { ...json, origin: 'https://evil.example' }, body: '{}' })).status).toBe(403)
+    expect(
+      (
+        await fetch(f.base + '/rc/boot-report', {
+          method: 'POST',
+          headers: json,
+          body: JSON.stringify({ errors: ['资源加载失败: <script> x'] }),
+        })
+      ).status,
+    ).toBe(204)
+    expect(
+      (
+        await fetch(f.base + '/rc/boot-report', {
+          method: 'POST',
+          headers: { ...json, origin: f.base, cookie: f.cookie },
+          body: JSON.stringify({ errors: [] }),
+        })
+      ).status,
+    ).toBe(204)
+    expect(
+      (
+        await fetch(f.base + '/rc/boot-report', {
+          method: 'POST',
+          headers: { ...json, origin: 'https://evil.example' },
+          body: '{}',
+        })
+      ).status,
+    ).toBe(403)
     expect((await fetch(f.base + '/rc/boot-report')).status).toBe(403)
     expect(f.reports).toHaveLength(2)
     expect(f.reports[0]!.device).toBeUndefined()
@@ -339,6 +548,7 @@ it('normalizes every close code ws refuses to send', () => {
   expect(closeCode(4999)).toBe(4999)
 })
 it('rejects traversal and malformed paths', () => {
-  for (const path of ['//evil', '/a/../b', '/a/%2e%2e/b', '/a/%252e%252e/b', '/a%5cb', '/%00', '/%xx']) expect(safePath(path)).toBe(false)
+  for (const path of ['//evil', '/a/../b', '/a/%2e%2e/b', '/a/%252e%252e/b', '/a%5cb', '/%00', '/%xx'])
+    expect(safePath(path)).toBe(false)
   expect(safePath('/api/session/uploadFileBinary?name=a%20b')).toBe(true)
 })

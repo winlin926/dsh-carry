@@ -16,10 +16,26 @@ export interface LanFallback {
   url: string
 }
 /** The direct line is offered per boot: its signaling route, and which line this phone prefers. */
-export interface BootDirect { signal: string; preference: 'lan' | 'public' }
-export interface BootContext { fallback?: LanFallback; direct?: BootDirect; entry?: 'lan' | 'public'; version?: string }
+export interface BootDirect {
+  signal: string
+  preference: 'lan' | 'public'
+}
+export interface BootContext {
+  fallback?: LanFallback
+  direct?: BootDirect
+  entry?: 'lan' | 'public'
+  version?: string
+}
 
-function remoteBoot(parseLocalFile: (href: string) => string | undefined, context: BootContext | null, createScreen: typeof createBootScreen, createLink: typeof remoteDirect, previewWorkerPath: string, createRuntime: typeof createRemoteRuntime, openFile: typeof openRemoteFile): void {
+function remoteBoot(
+  parseLocalFile: (href: string) => string | undefined,
+  context: BootContext | null,
+  createScreen: typeof createBootScreen,
+  createLink: typeof remoteDirect,
+  previewWorkerPath: string,
+  createRuntime: typeof createRemoteRuntime,
+  openFile: typeof openRemoteFile,
+): void {
   const globals = window as unknown as Record<string, any>
   globals.__DSH_REMOTE_CONTROL__ = true
   const runtime = createRuntime(context?.entry, context?.version)
@@ -28,10 +44,12 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     try {
       const saved = window.localStorage?.getItem('dsh-rc-language')
       if (saved === 'zh' || saved === 'en') return saved
-    } catch { /* storage is optional */ }
+    } catch {
+      /* storage is optional */
+    }
     return navigator.language && !/^zh\b/i.test(navigator.language) ? 'en' : 'zh'
   })()
-  const say = (zh: string, en: string): string => language === 'en' ? en : zh
+  const say = (zh: string, en: string): string => (language === 'en' ? en : zh)
   // The Host owns the document language, theme colour and keyboard policy since 0.2.2: a phone
   // gets its mobile layout from the Host itself. Only the browser's translate offer is ours to
   // refuse, because the app's own copy is what the reader is looking at.
@@ -43,7 +61,9 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
       const clean = new URL(location.href)
       clean.searchParams.delete('rc')
       window.history?.replaceState?.(null, '', clean.pathname + clean.search + clean.hash)
-    } catch { /* The marker may stay if the address cannot be rewritten. */ }
+    } catch {
+      /* The marker may stay if the address cannot be rewritten. */
+    }
   }
   const transport = globals.__DSH_TRANSPORT__ ?? {}
   globals.__DSH_TRANSPORT__ = transport
@@ -52,40 +72,58 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
   // entry it arrived through until the channel has proven it carries traffic in both directions.
   const direct = context?.direct
   let currentRoute: 'direct' | 'upstream' = 'upstream'
-  const link = direct ? createLink({
-    signalPath: direct.signal,
-    fetch: (url: RequestInfo | URL, init?: RequestInit) => originalFetch(url, init),
-    // Bound: the browser's timer functions throw "Illegal invocation" when called off the window.
-    setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
-    clearTimeout: (handle: number) => clearTimeout(handle),
-    setInterval: (fn: () => void, ms: number) => setInterval(fn, ms),
-    clearInterval: (handle: number) => clearInterval(handle),
-    baseUrl: () => location.href,
-    visible: () => !document.hidden,
-    preference: () => direct.preference,
-    onState: state => {
-      if (state.line === currentRoute) return
-      currentRoute = state.line
-      setTimeout(moveSockets, 0)
-    },
-    log: (line: string) => { try { console.debug('[rc-direct] ' + line) } catch { /* a missing console is not a failure */ } },
-  }) : undefined
+  const link = direct
+    ? createLink({
+        signalPath: direct.signal,
+        fetch: (url: RequestInfo | URL, init?: RequestInit) => originalFetch(url, init),
+        // Bound: the browser's timer functions throw "Illegal invocation" when called off the window.
+        setTimeout: (fn: () => void, ms: number) => setTimeout(fn, ms),
+        clearTimeout: (handle: number) => clearTimeout(handle),
+        setInterval: (fn: () => void, ms: number) => setInterval(fn, ms),
+        clearInterval: (handle: number) => clearInterval(handle),
+        baseUrl: () => location.href,
+        visible: () => !document.hidden,
+        preference: () => direct.preference,
+        onState: (state) => {
+          if (state.line === currentRoute) return
+          currentRoute = state.line
+          setTimeout(moveSockets, 0)
+        },
+        log: (line: string) => {
+          try {
+            console.debug('[rc-direct] ' + line)
+          } catch {
+            /* a missing console is not a failure */
+          }
+        },
+      })
+    : undefined
   /** Every same-origin call the app makes: uploads, streaming and previews take the live line. */
   const routedFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input instanceof Request ? input.url : String(input)
     let sameOrigin = false
-    try { sameOrigin = new URL(url, location.href).origin === location.origin } catch { return originalFetch(input, init) }
+    try {
+      sameOrigin = new URL(url, location.href).origin === location.origin
+    } catch {
+      return originalFetch(input, init)
+    }
     if (!sameOrigin || !link) return originalFetch(input, init)
     const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
     const safeRead = method === 'GET' || method === 'HEAD'
     const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined)
-    const useDirect = link.ready && (link.line === 'direct' || (!safeRead && await link.preferDirectForWrite()))
+    const useDirect = link.ready && (link.line === 'direct' || (!safeRead && (await link.preferDirectForWrite())))
     if (useDirect) {
-      try { return await link.fetch(input, init) } catch (error) { if (!safeRead || signal?.aborted) throw error }
+      try {
+        return await link.fetch(input, init)
+      } catch (error) {
+        if (!safeRead || signal?.aborted) throw error
+      }
     }
     // Only a read can try the other line after an ambiguous failure. A write may already have reached the Host.
     let response: Response
-    try { response = await originalFetch(input, init) } catch (error) {
+    try {
+      response = await originalFetch(input, init)
+    } catch (error) {
       if (signal?.aborted) throw error
       link.invalidateUpstream()
       if (safeRead && !useDirect && link.ready) return link.fetch(input, init)
@@ -104,27 +142,53 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
   // Read-only diagnostics: a phone that cannot reach its own line is otherwise undebuggable.
   if (link) globals.__DSH_DIRECT__ = { state: () => link.state(), ready: () => link.ready }
   if (link) {
-    setTimeout(() => { void link.start() }, 0)
-    const checkNetwork = () => { link.invalidateUpstream(); if (!document.hidden) link.checkLines() }
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) checkNetwork() })
+    setTimeout(() => {
+      void link.start()
+    }, 0)
+    const checkNetwork = () => {
+      link.invalidateUpstream()
+      if (!document.hidden) link.checkLines()
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) checkNetwork()
+    })
     window.addEventListener('offline', link.invalidateUpstream)
     window.addEventListener('online', checkNetwork)
     const network = (navigator as Navigator & { connection?: EventTarget }).connection
     network?.addEventListener('change', checkNetwork)
     if (window.isSecureContext && navigator.serviceWorker) {
-      navigator.serviceWorker.addEventListener('message', event => {
+      navigator.serviceWorker.addEventListener('message', (event) => {
         const port = event.ports[0]
         const source = event.source as ServiceWorker | null
-        if (!port || source?.scriptURL !== new URL(previewWorkerPath, location.href).href || event.data?.type !== 'dsh-preview') return
-        if (link.line !== 'direct') { port.postMessage(null); return }
+        if (
+          !port ||
+          source?.scriptURL !== new URL(previewWorkerPath, location.href).href ||
+          event.data?.type !== 'dsh-preview'
+        )
+          return
+        if (link.line !== 'direct') {
+          port.postMessage(null)
+          return
+        }
         void (async () => {
           const target = new URL(String(event.data.url), location.href)
-          if (target.origin !== location.origin || !/^\/rc\/workspace-preview\/[A-Za-z0-9_-]{43}\//.test(target.pathname)) return null
+          if (
+            target.origin !== location.origin ||
+            !/^\/rc\/workspace-preview\/[A-Za-z0-9_-]{43}\//.test(target.pathname)
+          )
+            return null
           const response = await link.fetch(target)
           return { status: response.status, headers: [...response.headers], body: response.body }
-        })().then(result => {
-          try { port.postMessage(result, result?.body ? [result.body] : []) } catch { port.postMessage(null) }
-        }, () => port.postMessage(null))
+        })().then(
+          (result) => {
+            try {
+              port.postMessage(result, result?.body ? [result.body] : [])
+            } catch {
+              port.postMessage(null)
+            }
+          },
+          () => port.postMessage(null),
+        )
       })
       void navigator.serviceWorker.register(previewWorkerPath, { scope: '/' }).catch(() => {})
     }
@@ -132,8 +196,11 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
   function notice(message: string): void {
     const existing = document.getElementById('dsh-rc-notice')
     if (existing) existing.remove()
-    const toast = document.createElement('div'); toast.id = 'dsh-rc-notice'; toast.setAttribute('role', 'status')
-    toast.style.cssText = 'position:fixed;left:50%;top:20px;transform:translateX(-50%);z-index:2147483647;max-width:min(86vw,420px);padding:10px 16px;border-radius:999px;background:#242938;color:#fff;font:13px/1.6 system-ui,sans-serif;text-align:center;box-shadow:0 8px 28px #00000047'
+    const toast = document.createElement('div')
+    toast.id = 'dsh-rc-notice'
+    toast.setAttribute('role', 'status')
+    toast.style.cssText =
+      'position:fixed;left:50%;top:20px;transform:translateX(-50%);z-index:2147483647;max-width:min(86vw,420px);padding:10px 16px;border-radius:999px;background:#242938;color:#fff;font:13px/1.6 system-ui,sans-serif;text-align:center;box-shadow:0 8px 28px #00000047'
     toast.textContent = message
     ;(document.body ?? document.documentElement).append(toast)
     setTimeout(() => toast.remove(), 2600)
@@ -141,7 +208,10 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
   /** Open computer files on the remote device instead of invoking the Desktop handler. */
   async function openLocalFile(href: string): Promise<void> {
     const path = parseLocalFile(href)
-    if (!path) { notice(say('链接不是本机文件路径。', 'This is not a local file link.')); return }
+    if (!path) {
+      notice(say('链接不是本机文件路径。', 'This is not a local file link.'))
+      return
+    }
     const address = '/rc/workspace-file?p=' + encodeURIComponent(path)
     if (/\.html?$/i.test(path) || /\.svg$/i.test(path)) {
       // These documents keep the gateway's sandbox CSP. A blob would drop that header.
@@ -152,10 +222,19 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
           const response = await link.fetch(address + '&preview=1')
           const locationHeader = response.headers.get('location')
           const target = locationHeader && new URL(locationHeader, location.href)
-          if (response.status !== 303 || !target || target.origin !== location.origin || !target.pathname.startsWith('/rc/workspace-preview/')) throw new Error('Invalid preview')
+          if (
+            response.status !== 303 ||
+            !target ||
+            target.origin !== location.origin ||
+            !target.pathname.startsWith('/rc/workspace-preview/')
+          )
+            throw new Error('Invalid preview')
           if (preview) preview.location.replace(target.href)
           else location.assign(target.href)
-        } catch { preview?.close(); notice(say('无法打开文件预览。', 'Could not open the file preview.')) }
+        } catch {
+          preview?.close()
+          notice(say('无法打开文件预览。', 'Could not open the file preview.'))
+        }
         return
       }
       const preview = window.open(address, '_blank')
@@ -165,50 +244,82 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     }
     await openFile(address, window.fetch, language)
   }
-  document.addEventListener('click', event => {
-    const target = event.target as Element | null
-    const anchor = target?.closest?.('a[href]') as HTMLAnchorElement | null
-    if (!anchor) return
-    const href = anchor.getAttribute('href') ?? ''
-    if (!/^file:/i.test(href)) return
-    event.preventDefault(); event.stopImmediatePropagation()
-    void openLocalFile(anchor.href)
-  }, true)
+  document.addEventListener(
+    'click',
+    (event) => {
+      const target = event.target as Element | null
+      const anchor = target?.closest?.('a[href]') as HTMLAnchorElement | null
+      if (!anchor) return
+      const href = anchor.getAttribute('href') ?? ''
+      if (!/^file:/i.test(href)) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      void openLocalFile(anchor.href)
+    },
+    true,
+  )
   const started = performance.now()
   let phase: 'checking' | 'loading' | 'initializing' | 'ready' | 'failed' = 'checking'
   let result: 'unknown' | 'pending' | 'ready' | 'failed' = 'unknown'
-  let observedBoot = false, loading = 0, completedResources = 0
+  let observedBoot = false,
+    loading = 0,
+    completedResources = 0
   const errors: string[] = []
-  const resources: Array<{ origin: string; path: string; rev?: string; result: 'loaded' | 'error'; durationMs: number }> = []
+  const resources: Array<{
+    origin: string
+    path: string
+    rev?: string
+    result: 'loaded' | 'error'
+    durationMs: number
+  }> = []
   const resourceAddress = (value: string): { origin: string; path: string; rev?: string } => {
     try {
-      const url = new URL(value, location.href), rev = url.searchParams.get('rev')
-      return { origin: url.origin.slice(0, 120), path: url.pathname.slice(0, 160), ...rev && /^[\w-]{1,64}$/.test(rev) ? { rev } : {} }
-    } catch { return { origin: '', path: '' } }
+      const url = new URL(value, location.href),
+        rev = url.searchParams.get('rev')
+      return {
+        origin: url.origin.slice(0, 120),
+        path: url.pathname.slice(0, 160),
+        ...(rev && /^[\w-]{1,64}$/.test(rev) ? { rev } : {}),
+      }
+    } catch {
+      return { origin: '', path: '' }
+    }
   }
-  const recordError = (message: string): void => { if (errors.length < 6 && !errors.includes(message)) errors.push(message) }
+  const recordError = (message: string): void => {
+    if (errors.length < 6 && !errors.includes(message)) errors.push(message)
+  }
   let reported = 0
   let reportTimer: ReturnType<typeof setTimeout> | undefined
   const sendReport = (): void => {
     if (reported >= 3) return
     reported += 1
     const report = {
-      ...resourceAddress(location.href), viewport: `${innerWidth}x${innerHeight}@${devicePixelRatio}`,
-      ua: navigator.userAgent.slice(0, 300), phase, result, mounted: result === 'ready',
-      durationMs: Math.max(0, Math.round(performance.now() - started)), completedResources,
-      resources: resources.slice(), errors: errors.slice(),
+      ...resourceAddress(location.href),
+      viewport: `${innerWidth}x${innerHeight}@${devicePixelRatio}`,
+      ua: navigator.userAgent.slice(0, 300),
+      phase,
+      result,
+      mounted: result === 'ready',
+      durationMs: Math.max(0, Math.round(performance.now() - started)),
+      completedResources,
+      resources: resources.slice(),
+      errors: errors.slice(),
     }
     let payload = JSON.stringify(report)
     // The gateway accepts 8 KiB; non-ASCII paths can use three bytes per character.
     while (new TextEncoder().encode(payload).length > 7000 && (report.resources.length || report.errors.length)) {
-      if (report.resources.length) report.resources.shift(); else report.errors.pop()
+      if (report.resources.length) report.resources.shift()
+      else report.errors.pop()
       payload = JSON.stringify(report)
     }
     void originalFetch('/rc/boot-report', {
-      method: 'POST', keepalive: true,
+      method: 'POST',
+      keepalive: true,
       headers: { 'content-type': 'application/json' },
       body: payload,
-    }).catch(() => { /* diagnostics must never disturb the page */ })
+    }).catch(() => {
+      /* diagnostics must never disturb the page */
+    })
   }
   const scheduleReport = (delay: number): void => {
     if (reported >= 3) return
@@ -217,15 +328,28 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
   }
   // -------------------------------------------------------------- startup progress
   const STORE_KEY = 'dsh-rc-boot-graph'
-  type Graph = { rev: string; entries: Array<{ id: string; url: string }>; batches: Array<{ url: string; entries: string[] }> }
+  type Graph = {
+    rev: string
+    entries: Array<{ id: string; url: string }>
+    batches: Array<{ url: string; entries: string[] }>
+  }
   /** The Host resolves `<package>/client` and its package onto one graph row. */
   const bare = (spec: string): string => (spec.endsWith('/client') ? spec.slice(0, -7) : spec)
   const addr = (value: string): string => {
-    try { const url = new URL(value, location.href); url.searchParams.delete('rev'); return url.href } catch { return value }
+    try {
+      const url = new URL(value, location.href)
+      url.searchParams.delete('rev')
+      return url.href
+    } catch {
+      return value
+    }
   }
-  const rowAt = new Map<string, number>(), batchAt = new Map<string, number[]>(), singleAt = new Map<string, number>()
+  const rowAt = new Map<string, number>(),
+    batchAt = new Map<string, number[]>(),
+    singleAt = new Map<string, number>()
   const registered = new Set<number>()
-  const early: unknown[] = [], inFlight: string[] = []
+  const early: unknown[] = [],
+    inFlight: string[] = []
   const timers: Record<string, ReturnType<typeof setTimeout> | undefined> = {}
   let screen: ReturnType<typeof createScreen> | null = createScreen(language)
   const VERDICT: Record<string, string> = {
@@ -235,9 +359,15 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     unavailable: say('已读取本次插件清单', 'Current plugin list loaded'),
     unknown: say('无法核对插件变化', 'Could not check plugin changes'),
   }
-  let graph: Graph | null = null, check: 'pending' | 'same' | 'changed' | 'first' | 'unavailable' | 'unknown' = 'pending'
-  let counting: 'unknown' | 'watching' | 'absent' = 'unknown', wrapped = false, completed = false
-  let recent: number[] = [], newest = -1, shownCheck = '', holdingVerdict = false
+  let graph: Graph | null = null,
+    check: 'pending' | 'same' | 'changed' | 'first' | 'unavailable' | 'unknown' = 'pending'
+  let counting: 'unknown' | 'watching' | 'absent' = 'unknown',
+    wrapped = false,
+    completed = false
+  let recent: number[] = [],
+    newest = -1,
+    shownCheck = '',
+    holdingVerdict = false
   const node = (tag: string, cls: string, parent?: HTMLElement): HTMLElement => {
     const made = document.createElement(tag) as HTMLElement
     made.className = cls
@@ -249,70 +379,119 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     if (!wire || typeof wire !== 'object' || Array.isArray(wire)) return null
     const value = wire as { rev?: unknown; entries?: unknown; batches?: unknown }
     if (typeof value.rev !== 'string' || !value.rev || !Array.isArray(value.entries)) return null
-    const entries: Graph['entries'] = [], seen = new Set<string>()
+    const entries: Graph['entries'] = [],
+      seen = new Set<string>()
     for (const row of value.entries as Array<{ id?: unknown; url?: unknown }>) {
-      if (!row || typeof row.id !== 'string' || !row.id || typeof row.url !== 'string' || !row.url || seen.has(row.id)) return null
-      seen.add(row.id); entries.push({ id: row.id, url: row.url })
+      if (!row || typeof row.id !== 'string' || !row.id || typeof row.url !== 'string' || !row.url || seen.has(row.id))
+        return null
+      seen.add(row.id)
+      entries.push({ id: row.id, url: row.url })
     }
     return { rev: value.rev, entries, batches: (Array.isArray(value.batches) ? value.batches : []) as Graph['batches'] }
   }
   /** Only a Host that took the page over leaves a baseline, so a broken boot is retried as broken. */
   const previousRevision = (() => {
-    try { const store = window.localStorage; return store ? store.getItem(STORE_KEY) : false } catch { return false }
+    try {
+      const store = window.localStorage
+      return store ? store.getItem(STORE_KEY) : false
+    } catch {
+      return false
+    }
   })()
-  const remember = (): void => { try { if (graph) (window as unknown as { localStorage?: Storage }).localStorage?.setItem(STORE_KEY, graph.rev) } catch { /* a page without storage keeps no baseline */ } }
+  const remember = (): void => {
+    try {
+      if (graph) (window as unknown as { localStorage?: Storage }).localStorage?.setItem(STORE_KEY, graph.rev)
+    } catch {
+      /* a page without storage keeps no baseline */
+    }
+  }
   const observe = (registration: unknown): void => {
-    if (!graph) { if (early.length < 1000) early.push(registration); return }
+    if (!graph) {
+      if (early.length < 1000) early.push(registration)
+      return
+    }
     const value = registration as { id?: unknown; chunk?: unknown }
     if (typeof value?.id !== 'string' || value.chunk !== undefined) return
     const at = rowAt.get(bare(value.id))
     if (at === undefined || registered.has(at)) return
-    registered.add(at); recent.push(at); scheduleProgress()
+    registered.add(at)
+    recent.push(at)
+    scheduleProgress()
   }
-  const moduleName = (id: string): string => ({
-    '@deepseek-ai/dsh-client-connection': say('连接服务', 'Connection service'),
-    '@deepseek-ai/dsh-client-ui-settings': say('界面设置', 'Settings'),
-    '@deepseek-ai/dsh-client-ui-sidebar': say('会话侧栏', 'Conversation sidebar'),
-    '@deepseek-ai/dsh-client-ui-theme': say('界面主题', 'Theme'),
-  }[id] ?? id.replace(/^@[^/]+\//, '').replace(/^dsh-client-/, '').replace(/-/g, ' '))
+  const moduleName = (id: string): string =>
+    ({
+      '@deepseek-ai/dsh-client-connection': say('连接服务', 'Connection service'),
+      '@deepseek-ai/dsh-client-ui-settings': say('界面设置', 'Settings'),
+      '@deepseek-ai/dsh-client-ui-sidebar': say('会话侧栏', 'Conversation sidebar'),
+      '@deepseek-ai/dsh-client-ui-theme': say('界面主题', 'Theme'),
+    })[id] ??
+    id
+      .replace(/^@[^/]+\//, '')
+      .replace(/^dsh-client-/, '')
+      .replace(/-/g, ' ')
   const inFlightName = (): string => {
     if (!graph) return ''
-    for (const url of inFlight) for (const at of batchAt.get(url) ?? (singleAt.has(url) ? [singleAt.get(url)!] : [])) if (!registered.has(at)) return say('正在准备：', 'Preparing: ') + moduleName(graph.entries[at]!.id)
+    for (const url of inFlight)
+      for (const at of batchAt.get(url) ?? (singleAt.has(url) ? [singleAt.get(url)!] : []))
+        if (!registered.has(at)) return say('正在准备：', 'Preparing: ') + moduleName(graph.entries[at]!.id)
     return newest < 0 ? '' : say('刚完成：', 'Loaded: ') + moduleName(graph.entries[newest]!.id)
   }
   const adopt = (snapshot: Graph | null): void => {
     if (!snapshot || graph) return
     graph = snapshot
-    snapshot.entries.forEach((row, index) => rowAt.set(bare(row.id), index))
+    for (const [index, row] of snapshot.entries.entries()) rowAt.set(bare(row.id), index)
     for (const batch of snapshot.batches) {
       if (typeof batch?.url !== 'string' || !Array.isArray(batch.entries)) continue
-      const positions = batch.entries.map(id => rowAt.get(bare(id))).filter((index): index is number => index !== undefined)
+      const positions = batch.entries
+        .map((id) => rowAt.get(bare(id)))
+        .filter((index): index is number => index !== undefined)
       if (positions.length) batchAt.set(addr(batch.url), positions)
     }
     // A batch that already executed without one row is retried once as that row's own bundle.
-    for (const row of snapshot.entries) if (!singleAt.has(addr(row.url))) singleAt.set(addr(row.url), rowAt.get(bare(row.id))!)
-    check = previousRevision === false ? 'unavailable' : previousRevision === null ? 'first' : previousRevision === snapshot.rev ? 'same' : 'changed'
+    for (const row of snapshot.entries)
+      if (!singleAt.has(addr(row.url))) singleAt.set(addr(row.url), rowAt.get(bare(row.id))!)
+    check =
+      previousRevision === false
+        ? 'unavailable'
+        : previousRevision === null
+          ? 'first'
+          : previousRevision === snapshot.rev
+            ? 'same'
+            : 'changed'
     for (const registration of early.splice(0)) observe(registration)
     paint()
   }
   const removeScreen = (): void => {
     for (const name in timers) clearTimeout(timers[name])
-    screen?.remove(); screen = null
+    screen?.remove()
+    screen = null
   }
   const paint = (): void => {
     if (!screen) return
-    clearTimeout(timers.progress); timers.progress = undefined
-    if (recent.length) { newest = Math.min(...recent); recent = [] }
-    const total = graph?.entries.length ?? 0, counted = counting === 'watching' && total > 0
-    const done = registered.size, settled = check !== 'pending'
+    clearTimeout(timers.progress)
+    timers.progress = undefined
+    if (recent.length) {
+      newest = Math.min(...recent)
+      recent = []
+    }
+    const total = graph?.entries.length ?? 0,
+      counted = counting === 'watching' && total > 0
+    const done = registered.size,
+      settled = check !== 'pending'
     const holding = settled && (shownCheck !== check || holdingVerdict)
-    const moduleCount = total ? say(`共 ${total} 个模块`, `${total} modules`) : say('无需加载模块', 'No modules to load')
+    const moduleCount = total
+      ? say(`共 ${total} 个模块`, `${total} modules`)
+      : say('无需加载模块', 'No modules to load')
     const verdict = VERDICT[check] ?? VERDICT.unknown!
-    let stage = '', count = '', detail = ''
+    let stage = '',
+      count = '',
+      detail = ''
     if (completed) {
-      stage = say('✓ 启动完成', '✓ Startup complete'); detail = say('工作区已就绪', 'Workspace ready')
+      stage = say('✓ 启动完成', '✓ Startup complete')
+      detail = say('工作区已就绪', 'Workspace ready')
     } else if (phase === 'loading' || phase === 'initializing') {
-      stage = phase === 'loading' ? say('正在加载模块', 'Loading modules') : say('正在初始化插件', 'Initializing plugins')
+      stage =
+        phase === 'loading' ? say('正在加载模块', 'Loading modules') : say('正在初始化插件', 'Initializing plugins')
       if (counted) count = say(`${done} / ${total} 个模块`, `${done} / ${total} modules`)
       else if (graph) count = moduleCount
       if (!settled) detail = say('正在检查插件变化…', 'Checking for plugin changes…')
@@ -323,10 +502,24 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
       stage = say('正在检查插件变化…', 'Checking for plugin changes…')
       detail = say('正在读取插件清单…', 'Reading the plugin list…')
       if (graph) count = moduleCount
-    } else { stage = verdict; if (graph) count = moduleCount }
+    } else {
+      stage = verdict
+      if (graph) count = moduleCount
+    }
     const announcement = !completed && holding && verdict !== stage ? verdict + say('。', '. ') + stage : stage
-    screen.paint({ stage, count, detail, complete: completed, announcement,
-      progress: completed || (graph && !total) ? null : counted && (phase === 'loading' || phase === 'initializing') ? done / total : 'pending' })
+    screen.paint({
+      stage,
+      count,
+      detail,
+      complete: completed,
+      announcement,
+      progress:
+        completed || (graph && !total)
+          ? null
+          : counted && (phase === 'loading' || phase === 'initializing')
+            ? done / total
+            : 'pending',
+    })
     if (settled && shownCheck !== check) {
       shownCheck = check
       holdingVerdict = true
@@ -353,7 +546,11 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     if (wrapped) return
     const facade = (window as unknown as Record<string, any>).__ModuleLoader__ as Record<string, any> | undefined
     if (!facade || typeof facade !== 'object') return
-    if (typeof facade.create !== 'function' || facade.mode !== 'queue') { wrapped = true; counting = 'absent'; return }
+    if (typeof facade.create !== 'function' || facade.mode !== 'queue') {
+      wrapped = true
+      counting = 'absent'
+      return
+    }
     const create = facade.create
     facade.create = function (this: Record<string, any>, ...options: unknown[]): unknown {
       adopt(readGraph((options[0] as { boot?: unknown } | undefined)?.boot))
@@ -362,28 +559,49 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
       const system = create.apply(this, options)
       for (const registration of pending) observe(registration)
       const load = this.load
-      if (typeof load === 'function') this.load = function (this: unknown, registration: unknown): unknown { observe(registration); return load.apply(this, [registration]) }
-      counting = 'watching'; scheduleProgress()
+      if (typeof load === 'function')
+        this.load = function (this: unknown, registration: unknown): unknown {
+          observe(registration)
+          return load.apply(this, [registration])
+        }
+      counting = 'watching'
+      scheduleProgress()
       return system
     }
     wrapped = true
   }
   const showComplete = (): void => {
     if (completed || !screen) return
-    completed = true; paint()
-    timers.hold = setTimeout(() => { screen?.fade(); timers.fade = setTimeout(removeScreen, 160) }, 440)
+    completed = true
+    paint()
+    timers.hold = setTimeout(() => {
+      screen?.fade()
+      timers.fade = setTimeout(removeScreen, 160)
+    }, 440)
   }
   const finishReady = (): void => {
     if (result === 'ready') return
-    phase = result = 'ready'; observer.disconnect(); scheduleReport(100); remember()
-    if (previousRevision || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { removeScreen(); return }
+    phase = result = 'ready'
+    observer.disconnect()
+    scheduleReport(100)
+    remember()
+    if (previousRevision || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      removeScreen()
+      return
+    }
     screen?.hideControls()
-    if (check === 'pending') { check = 'unknown'; paint() }
+    if (check === 'pending') {
+      check = 'unknown'
+      paint()
+    }
     if (!holdingVerdict) showComplete()
   }
   const finishFailed = (boot: HTMLElement): void => {
     if (result === 'failed') return
-    phase = result = 'failed'; recordError('official-startup-failure'); observer.disconnect(); scheduleReport(100)
+    phase = result = 'failed'
+    recordError('official-startup-failure')
+    observer.disconnect()
+    scheduleReport(100)
     removeScreen()
     let status = boot.querySelector<HTMLElement>('[data-dsh-rc-boot-status]')
     if (!status) {
@@ -396,8 +614,12 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     status.setAttribute('lang', say('zh-CN', 'en'))
     const retry = node('button', '', status) as HTMLButtonElement
     retry.textContent = say('重新加载', 'Reload')
-    retry.style.cssText = 'margin:12px auto 0;padding:8px 16px;border:1px solid currentColor;border-radius:999px;background:none;color:inherit'
-    retry.onclick = () => { retry.disabled = true; location.reload() }
+    retry.style.cssText =
+      'margin:12px auto 0;padding:8px 16px;border:1px solid currentColor;border-radius:999px;background:none;color:inherit'
+    retry.onclick = () => {
+      retry.disabled = true
+      location.reload()
+    }
   }
   const updateBoot = (): void => {
     screen?.mount()
@@ -412,52 +634,120 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
       else scheduleProgress()
       return
     }
-    observedBoot = true; result = 'pending'
-    const failed = !boot.querySelector('[data-dsh-boot-spinner]') && /Failed to load plugins|插件加载失败/.test(boot.textContent ?? '')
-    if (failed) { finishFailed(boot); return }
+    observedBoot = true
+    result = 'pending'
+    const failed =
+      !boot.querySelector('[data-dsh-boot-spinner]') &&
+      /Failed to load plugins|插件加载失败/.test(boot.textContent ?? '')
+    if (failed) {
+      finishFailed(boot)
+      return
+    }
     // Real registrations outrank transport counts: 'initializing' means every graph row arrived.
     const total = graph?.entries.length ?? 0
-    phase = loading ? 'loading'
-      : counting === 'watching' && total ? registered.size >= total ? 'initializing' : 'loading'
-      : completedResources ? 'initializing' : 'checking'
+    phase = loading
+      ? 'loading'
+      : counting === 'watching' && total
+        ? registered.size >= total
+          ? 'initializing'
+          : 'loading'
+        : completedResources
+          ? 'initializing'
+          : 'checking'
     scheduleProgress()
   }
   paint()
   // A Host that never publishes a graph leaves nothing to compare, and the reader must be told.
-  timers.check = setTimeout(() => { if (check === 'pending') { check = 'unknown'; paint() } }, 3000)
+  timers.check = setTimeout(() => {
+    if (check === 'pending') {
+      check = 'unknown'
+      paint()
+    }
+  }, 3000)
   const observer = new MutationObserver(updateBoot)
   observer.observe(document.documentElement, { childList: true, subtree: true })
-  const previousLoad = typeof transport.loadBundle === 'function' ? transport.loadBundle.bind(transport) as (url: string) => Promise<void> : undefined
+  const previousLoad =
+    typeof transport.loadBundle === 'function'
+      ? (transport.loadBundle.bind(transport) as (url: string) => Promise<void>)
+      : undefined
   globals.__DSH_TRANSPORT__.loadBundle = (url: string): Promise<void> => {
-    const began = performance.now(); loading++; inFlight.push(addr(url)); updateBoot()
+    const began = performance.now()
+    loading++
+    inFlight.push(addr(url))
+    updateBoot()
     const request = new Promise<void>((resolve, reject) => {
-      if (previousLoad) { resolve(previousLoad(url)); return }
-      const script = document.createElement('script'); script.async = true; script.src = url
-      script.addEventListener('load', () => { script.remove(); resolve() }, { once: true })
-      script.addEventListener('error', () => { script.remove(); reject(new Error('client-modules: bundle script failed to load')) }, { once: true })
+      if (previousLoad) {
+        resolve(previousLoad(url))
+        return
+      }
+      const script = document.createElement('script')
+      script.async = true
+      script.src = url
+      script.addEventListener(
+        'load',
+        () => {
+          script.remove()
+          resolve()
+        },
+        { once: true },
+      )
+      script.addEventListener(
+        'error',
+        () => {
+          script.remove()
+          reject(new Error('client-modules: bundle script failed to load'))
+        },
+        { once: true },
+      )
       document.head.append(script)
     })
     const record = (outcome: 'loaded' | 'error'): void => {
       const arrived = inFlight.indexOf(addr(url))
       if (arrived >= 0) inFlight.splice(arrived, 1)
       if (outcome === 'loaded') completedResources++
-      resources.push({ ...resourceAddress(url), result: outcome, durationMs: Math.max(0, Math.round(performance.now() - began)) })
+      resources.push({
+        ...resourceAddress(url),
+        result: outcome,
+        durationMs: Math.max(0, Math.round(performance.now() - began)),
+      })
       if (resources.length > 8) resources.shift()
-      loading--; updateBoot()
+      loading--
+      updateBoot()
     }
     // The module loader owns retries and fallback; observing a request must not replay it.
-    return request.then(() => { record('loaded') }, failure => { record('error'); throw failure })
+    return request.then(
+      () => {
+        record('loaded')
+      },
+      (failure) => {
+        record('error')
+        throw failure
+      },
+    )
   }
-  window.addEventListener('error', event => {
-    const failure = event as ErrorEvent
-    if (failure.message === 'ResizeObserver loop completed with undelivered notifications.' || failure.message === 'ResizeObserver loop limit exceeded') return
-    const target = event.target as HTMLScriptElement & HTMLLinkElement & HTMLImageElement | null
-    if (target?.tagName && ['SCRIPT', 'LINK', 'IMG'].includes(target.tagName)) {
-      const address = resourceAddress(target.src || target.href || '')
-      recordError(`resource-event:${target.tagName.toLowerCase()}:${address.path}${address.rev ? '@' + address.rev : ''}`)
-    } else if (failure.message) recordError(`javascript-error:${resourceAddress(failure.filename || '').path}:${failure.lineno || 0}`)
-  }, true)
-  window.addEventListener('unhandledrejection', () => { recordError('unhandled-rejection') })
+  window.addEventListener(
+    'error',
+    (event) => {
+      const failure = event as ErrorEvent
+      if (
+        failure.message === 'ResizeObserver loop completed with undelivered notifications.' ||
+        failure.message === 'ResizeObserver loop limit exceeded'
+      )
+        return
+      const target = event.target as (HTMLScriptElement & HTMLLinkElement & HTMLImageElement) | null
+      if (target?.tagName && ['SCRIPT', 'LINK', 'IMG'].includes(target.tagName)) {
+        const address = resourceAddress(target.src || target.href || '')
+        recordError(
+          `resource-event:${target.tagName.toLowerCase()}:${address.path}${address.rev ? '@' + address.rev : ''}`,
+        )
+      } else if (failure.message)
+        recordError(`javascript-error:${resourceAddress(failure.filename || '').path}:${failure.lineno || 0}`)
+    },
+    true,
+  )
+  window.addEventListener('unhandledrejection', () => {
+    recordError('unhandled-rejection')
+  })
   updateBoot()
   scheduleReport(8000)
   function disconnected(title: string, identityMismatch = false): void {
@@ -467,7 +757,7 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     dialog.id = 'dsh-rc-disconnected'
     dialog.setAttribute('aria-labelledby', 'dsh-rc-disconnected-title')
     dialog.setAttribute('aria-describedby', 'dsh-rc-disconnected-text')
-    dialog.addEventListener('cancel', event => event.preventDefault())
+    dialog.addEventListener('cancel', (event) => event.preventDefault())
     const style = document.createElement('style')
     style.textContent = `
 #dsh-rc-disconnected {
@@ -503,14 +793,22 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
     instructions.id = 'dsh-rc-disconnected-text'
     dialog.setAttribute('lang', say('zh-CN', 'en'))
     instructions.textContent = identityMismatch
-      ? say('请在电脑上核对入口与指纹，从远程控制面板扫描新的二维码。', 'Check the entry address and fingerprint on the computer, then scan a new QR code from Remote Control.')
-      : say('在电脑上打开 DSH 的「远程控制」，用手机扫描新的二维码，并在电脑上确认。', 'Open Remote Control in DSH on the computer, scan a new QR code, and approve the request.')
+      ? say(
+          '请在电脑上核对入口与指纹，从远程控制面板扫描新的二维码。',
+          'Check the entry address and fingerprint on the computer, then scan a new QR code from Remote Control.',
+        )
+      : say(
+          '在电脑上打开 DSH 的「远程控制」，用手机扫描新的二维码，并在电脑上确认。',
+          'Open Remote Control in DSH on the computer, scan a new QR code, and approve the request.',
+        )
     dialog.append(style, heading, instructions)
     if (identityMismatch) {
       const retry = document.createElement('button')
       retry.type = 'button'
       retry.textContent = say('重试当前入口', 'Retry this entry')
-      retry.onclick = () => { if (!runtime.retry()) location.reload() }
+      retry.onclick = () => {
+        if (!runtime.retry()) location.reload()
+      }
       dialog.append(retry)
     }
     ;(document.body ?? document.documentElement).append(dialog)
@@ -576,14 +874,19 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
       button.textContent = message
       button.title = say('重试连接电脑', 'Retry the connection')
       button.setAttribute('aria-label', say('正在重新连接，点击重试', 'Reconnecting. Retry the connection'))
-      button.onclick = () => { if (!runtime.retry()) location.reload() }
+      button.onclick = () => {
+        if (!runtime.retry()) location.reload()
+      }
       bar.append(button)
     } else {
       status.className = 'connection-line'
     }
     bar.append(status)
     ;(document.body ?? document.documentElement).append(bar)
-    status.textContent = message === say('正在重新连接…', 'Reconnecting…') ? say('正在重新连接电脑…', 'Reconnecting to the computer…') : message
+    status.textContent =
+      message === say('正在重新连接…', 'Reconnecting…')
+        ? say('正在重新连接电脑…', 'Reconnecting to the computer…')
+        : message
     if (!retry) setTimeout(() => bar.remove(), 2600)
   }
   let fallbackTried = false
@@ -600,23 +903,64 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
   async function switchToLan(): Promise<void> {
     if (!lanFallback || fallbackTried || runtime.api.getSnapshot().phase !== 'reconnecting') return
     fallbackTried = true
-    const check = fallbackCheck = new AbortController()
+    const check = new AbortController()
+    fallbackCheck = check
     const timeout = setTimeout(() => check.abort(), 6000)
     try {
-      const response = await originalFetch('/rc/fallback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', signal: check.signal })
+      const response = await originalFetch('/rc/fallback', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+        signal: check.signal,
+      })
       if (fallbackCheck !== check) return
-      if (await unpaired(response)) { if (fallbackCheck === check) revoke(); return }
-      const data = await response.json().catch(() => null) as { sameHost?: unknown; url?: unknown; node?: unknown; hostId?: unknown; fingerprint?: unknown; reason?: unknown } | null
+      if (await unpaired(response)) {
+        if (fallbackCheck === check) revoke()
+        return
+      }
+      const data = (await response.json().catch(() => null)) as {
+        sameHost?: unknown
+        url?: unknown
+        node?: unknown
+        hostId?: unknown
+        fingerprint?: unknown
+        reason?: unknown
+      } | null
       if (fallbackCheck !== check) return
-      if (!response.ok || (data?.sameHost !== true && data?.reason !== 'identity')) { runtime.report('lan-unavailable'); return }
+      if (!response.ok || (data?.sameHost !== true && data?.reason !== 'identity')) {
+        runtime.report('lan-unavailable')
+        return
+      }
       const target = typeof data?.url === 'string' ? data.url : ''
-      const answerNode = data?.node && typeof data.node === 'object' && !Array.isArray(data.node) ? data.node as Record<string, unknown> : null
-      const answer = answerNode && typeof answerNode.id === 'string' && typeof answerNode.fingerprint === 'string'
-        ? { id: answerNode.id, fingerprint: answerNode.fingerprint }
-        : typeof data?.hostId === 'string' && typeof data?.fingerprint === 'string' ? { id: data.hostId, fingerprint: data.fingerprint } : null
-      const expected = lanFallback.node ?? (lanFallback.hostId !== null && lanFallback.fingerprint !== null ? { id: lanFallback.hostId, fingerprint: lanFallback.fingerprint } : null)
-      const sameOrigin = (() => { try { return new URL(target).origin === new URL(lanFallback.url).origin } catch { return false } })()
-      if (data?.sameHost === true && expected && answer?.id === expected.id && answer.fingerprint === expected.fingerprint && sameOrigin) {
+      const answerNode =
+        data?.node && typeof data.node === 'object' && !Array.isArray(data.node)
+          ? (data.node as Record<string, unknown>)
+          : null
+      const answer =
+        answerNode && typeof answerNode.id === 'string' && typeof answerNode.fingerprint === 'string'
+          ? { id: answerNode.id, fingerprint: answerNode.fingerprint }
+          : typeof data?.hostId === 'string' && typeof data?.fingerprint === 'string'
+            ? { id: data.hostId, fingerprint: data.fingerprint }
+            : null
+      const expected =
+        lanFallback.node ??
+        (lanFallback.hostId !== null && lanFallback.fingerprint !== null
+          ? { id: lanFallback.hostId, fingerprint: lanFallback.fingerprint }
+          : null)
+      const sameOrigin = (() => {
+        try {
+          return new URL(target).origin === new URL(lanFallback.url).origin
+        } catch {
+          return false
+        }
+      })()
+      if (
+        data?.sameHost === true &&
+        expected &&
+        answer?.id === expected.id &&
+        answer.fingerprint === expected.fingerprint &&
+        sameOrigin
+      ) {
         location.replace(new URL('/?rc=lan', target).href)
       } else {
         runtime.report('identity-mismatch')
@@ -634,7 +978,8 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
   runtime.api.subscribe(() => {
     const { phase, route, reason } = runtime.api.getSnapshot()
     if (phase === 'connected' || phase === 'blocked') {
-      clearTimeout(fallbackTimer); fallbackTimer = undefined
+      clearTimeout(fallbackTimer)
+      fallbackTimer = undefined
       const check = fallbackCheck
       fallbackCheck = undefined
       check?.abort()
@@ -642,8 +987,10 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
         fallbackTried = false
         document.getElementById('dsh-rc-disconnected')?.remove()
         const changed = route && lastRoute && route !== lastRoute
-        if (announceLan) { announceLan = false; connectionStatus(say('已切换到局域网', 'Switched to the local network')) }
-        else if (changed) {
+        if (announceLan) {
+          announceLan = false
+          connectionStatus(say('已切换到局域网', 'Switched to the local network'))
+        } else if (changed) {
           if (route === 'direct') connectionStatus(say('已切换到局域网直连', 'Switched to a direct LAN connection'))
           else if (route === 'public') connectionStatus(say('已切换到公网', 'Switched to the public entry'))
           else connectionStatus(say('已切换到局域网', 'Switched to the local network'))
@@ -654,31 +1001,57 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
       return
     }
     if (phase !== 'reconnecting') return
-    const message = reason === 'lan-unavailable'
-      ? say('局域网暂不可用，点击重试当前连接', 'LAN unavailable. Retry this connection')
-      : say('正在重新连接…', 'Reconnecting…')
-    if (message !== lastMessage) { lastMessage = message; connectionStatus(message, true) }
+    const message =
+      reason === 'lan-unavailable'
+        ? say('局域网暂不可用，点击重试当前连接', 'LAN unavailable. Retry this connection')
+        : say('正在重新连接…', 'Reconnecting…')
+    if (message !== lastMessage) {
+      lastMessage = message
+      connectionStatus(message, true)
+    }
   })
   window.addEventListener('dsh-rc-offline', () => {
     runtime.report('network')
-    if (link) { link.invalidateUpstream(); void link.probe(); return }
-    if (lanFallback && !fallbackTried && fallbackTimer === undefined && runtime.api.getSnapshot().phase === 'reconnecting') {
+    if (link) {
+      link.invalidateUpstream()
+      void link.probe()
+      return
+    }
+    if (
+      lanFallback &&
+      !fallbackTried &&
+      fallbackTimer === undefined &&
+      runtime.api.getSnapshot().phase === 'reconnecting'
+    ) {
       // Give the Host's current reconnect attempt a chance to finish.
-      fallbackTimer = setTimeout(() => { fallbackTimer = undefined; void switchToLan() }, 1500)
+      fallbackTimer = setTimeout(() => {
+        fallbackTimer = undefined
+        void switchToLan()
+      }, 1500)
     }
   })
 
   async function unpaired(response: Response, fromManagement = false): Promise<boolean> {
     const relayRefusal = fromManagement && response.status === 401
-    if ((!relayRefusal && response.status !== 403) || !response.headers.get('content-type')?.includes('application/json')) return false
+    if (
+      (!relayRefusal && response.status !== 403) ||
+      !response.headers.get('content-type')?.includes('application/json')
+    )
+      return false
     try {
       const data = await response.clone().json()
       return relayRefusal ? data?.error?.code === 'AUTH_REQUIRED' : data?.code === 'unpaired'
-    } catch { return false }
+    } catch {
+      return false
+    }
   }
   window.fetch = async (...args) => {
     const response = await routedFetch(args[0], args[1])
-    if (new URL(String(args[0] instanceof Request ? args[0].url : args[0]), location.href).origin === location.origin && await unpaired(response)) revoke()
+    if (
+      new URL(String(args[0] instanceof Request ? args[0].url : args[0]), location.href).origin === location.origin &&
+      (await unpaired(response))
+    )
+      revoke()
     return response
   }
   const OriginalSocket = window.WebSocket
@@ -687,105 +1060,195 @@ function remoteBoot(parseLocalFile: (href: string) => string | undefined, contex
   let probing: Promise<unknown> | undefined
   const probeAuthorization = (): void => {
     if (probing || runtime.api.getSnapshot().phase === 'blocked') return
-    probing = originalFetch('/api/dsh-remote-connect/manage', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'status' }) }).then(async response => {
-      if (await unpaired(response, true)) revoke()
-      else if ([502, 503, 504].includes(response.status)) runtime.report('host-unavailable')
-    }).catch(() => window.dispatchEvent(new Event('dsh-rc-offline'))).finally(() => { probing = undefined })
+    probing = originalFetch('/api/dsh-remote-connect/manage', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'status' }),
+    })
+      .then(async (response) => {
+        if (await unpaired(response, true)) revoke()
+        else if ([502, 503, 504].includes(response.status)) runtime.report('host-unavailable')
+      })
+      .catch(() => window.dispatchEvent(new Event('dsh-rc-offline')))
+      .finally(() => {
+        probing = undefined
+      })
   }
   const watchMux = (socket: Pick<WebSocket, 'addEventListener'>, route: 'lan' | 'public' | 'direct' | undefined) => {
     runtime.observeMux(socket, route)
-    socket.addEventListener('open', () => { hadMux = true })
-    socket.addEventListener('close', () => { if (hadMux) probeAuthorization() })
+    socket.addEventListener('open', () => {
+      hadMux = true
+    })
+    socket.addEventListener('close', () => {
+      if (hadMux) probeAuthorization()
+    })
   }
   // Sockets that opened before the direct line was usable: when it becomes usable they are closed
   // so the app's own reconnect logic opens them again on the direct channel. Without this the
   // stream carrier stays on the entry the page arrived through, and dies with it.
   const upstream = new Set<WebSocket>()
   const moveSockets = (): void => {
-    if (link?.line !== 'direct') { link?.reconnectSockets(); return }
+    if (link?.line !== 'direct') {
+      link?.reconnectSockets()
+      return
+    }
     for (const socket of upstream) socket.close()
     upstream.clear()
   }
-  globals.WebSocket = class extends OriginalSocket {
-    constructor(url: string | URL, protocols?: string | string[]) {
+  globals.WebSocket = new Proxy(OriginalSocket, {
+    construct(Target, args: [string | URL, (string | string[])?]) {
+      const [url, protocols] = args
       // A same-origin socket rides the direct line while it is up; anything else is a plain socket.
       const target = new URL(String(url), location.href)
-      const localSocket = target.host === location.host && (target.protocol === 'wss:' ? location.protocol === 'https:' : target.protocol === 'ws:' ? location.protocol === 'http:' : target.origin === location.origin)
+      const localSocket =
+        target.host === location.host &&
+        (target.protocol === 'wss:'
+          ? location.protocol === 'https:'
+          : target.protocol === 'ws:'
+            ? location.protocol === 'http:'
+            : target.origin === location.origin)
       const mux = localSocket && target.pathname === '/api/remote.mux'
       if (link?.line === 'direct' && localSocket) {
         const socket = link.socket(String(url), protocols)
         if (mux) watchMux(socket, 'direct')
         return socket as unknown as WebSocket
       }
-      super(url, protocols)
-      if (localSocket) upstream.add(this as unknown as WebSocket)
-      this.addEventListener('close', () => { upstream.delete(this as unknown as WebSocket) })
-      if (mux) watchMux(this, context?.entry)
-    }
-  }
-  if (!crypto.randomUUID) Object.defineProperty(crypto, 'randomUUID', { value: () => '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, c => (Number(c) ^ crypto.getRandomValues(new Uint8Array(1))[0]! & 15 >> Number(c) / 4).toString(16)), writable: true, configurable: true })
+      const socket = new Target(url, protocols)
+      if (localSocket) upstream.add(socket)
+      socket.addEventListener('close', () => {
+        upstream.delete(socket)
+      })
+      if (mux) watchMux(socket, context?.entry)
+      return socket
+    },
+  })
+  if (!crypto.randomUUID)
+    Object.defineProperty(crypto, 'randomUUID', {
+      value: () =>
+        '10000000-1000-4000-8000-100000000000'.replace(/[018]/g, (c) =>
+          (Number(c) ^ (crypto.getRandomValues(new Uint8Array(1))[0]! & (15 >> (Number(c) / 4)))).toString(16),
+        ),
+      writable: true,
+      configurable: true,
+    })
   // EventSource uses one authenticated WS carrier for both LAN and fixed-domain connections.
   const NativeSocket = window.WebSocket
   const NativeEventSource = globals.EventSource
   class RemoteEventSource extends EventTarget {
-    static CONNECTING = 0; static OPEN = 1; static CLOSED = 2
-    readonly CONNECTING = 0; readonly OPEN = 1; readonly CLOSED = 2
-    readyState = 0; url: string; withCredentials: boolean
+    static CONNECTING = 0
+    static OPEN = 1
+    static CLOSED = 2
+    readonly CONNECTING = 0
+    readonly OPEN = 1
+    readonly CLOSED = 2
+    readyState = 0
+    url: string
+    withCredentials: boolean
     onopen: ((event: Event) => void) | null = null
     onmessage: ((event: MessageEvent) => void) | null = null
     onerror: ((event: Event) => void) | null = null
-    private socket?: WebSocket; private timer?: ReturnType<typeof setTimeout>
-    private buffer = ''; private lastId = ''; private retry = 3000; private backoff = 0
+    private socket?: WebSocket
+    private timer?: ReturnType<typeof setTimeout>
+    private buffer = ''
+    private lastId = ''
+    private retry = 3000
+    private backoff = 0
     constructor(url: string | URL, init?: EventSourceInit) {
-      super(); this.url = new URL(String(url), location.href).href; this.withCredentials = init?.withCredentials ?? false
-      // The carrier only carries this origin. Anywhere else the browser's own EventSource owns the
-      // cross-origin rules: it reports a refusal as an error event and honours CORS.
-      if (new URL(this.url).origin !== location.origin) return new NativeEventSource(url, init)
+      super()
+      this.url = new URL(String(url), location.href).href
+      this.withCredentials = init?.withCredentials ?? false
       this.connect()
     }
     private emit(type: string, event: Event): void {
       this.dispatchEvent(event)
-      const callback = type === 'open' ? this.onopen : type === 'error' ? this.onerror : type === 'message' ? this.onmessage : undefined
+      const callback =
+        type === 'open'
+          ? this.onopen
+          : type === 'error'
+            ? this.onerror
+            : type === 'message'
+              ? this.onmessage
+              : undefined
       callback?.call(this, event as MessageEvent)
     }
     private connect(): void {
       if (this.readyState === 2) return
-      const url = new URL('/rc/sse', location.href); url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const source = new URL(this.url); url.searchParams.set('path', source.pathname + source.search)
+      const url = new URL('/rc/sse', location.href)
+      url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const source = new URL(this.url)
+      url.searchParams.set('path', source.pathname + source.search)
       if (this.lastId) url.searchParams.set('lastEventId', this.lastId)
-      const socket = this.socket = new NativeSocket(url)
-      socket.onmessage = event => {
+      const socket = new NativeSocket(url)
+      this.socket = socket
+      socket.onmessage = (event) => {
         const frame = JSON.parse(event.data)
         if (frame.type === 'ready') {
-          this.readyState = 1; this.backoff = 0
-          this.emit('open', new Event('open')); return
+          this.readyState = 1
+          this.backoff = 0
+          this.emit('open', new Event('open'))
+          return
         }
-        if (frame.type === 'error') { this.close(); this.emit('error', new Event('error')); return }
+        if (frame.type === 'error') {
+          this.close()
+          this.emit('error', new Event('error'))
+          return
+        }
         if (frame.type !== 'chunk') return
         this.buffer += frame.data
-        let match: RegExpExecArray | null
-        while ((match = /\r\n\r\n|\n\n|\r\r/.exec(this.buffer))) {
-          const text = this.buffer.slice(0, match.index); this.buffer = this.buffer.slice(match.index + match[0].length)
-          let type = 'message'; const data: string[] = []
+        for (;;) {
+          const match = /\r\n\r\n|\n\n|\r\r/.exec(this.buffer)
+          if (!match) break
+          const text = this.buffer.slice(0, match.index)
+          this.buffer = this.buffer.slice(match.index + match[0].length)
+          let type = 'message'
+          const data: string[] = []
           for (const line of text.split(/\r\n|\r|\n/)) {
-            const colon = line.indexOf(':'); const field = colon < 0 ? line : line.slice(0, colon); const value = colon < 0 ? '' : line.slice(colon + 1).replace(/^ /, '')
+            const colon = line.indexOf(':')
+            const field = colon < 0 ? line : line.slice(0, colon)
+            const value = colon < 0 ? '' : line.slice(colon + 1).replace(/^ /, '')
             if (field === 'data') data.push(value)
             else if (field === 'event') type = value || 'message'
             else if (field === 'id' && !value.includes('\0')) this.lastId = value
-            else if (field === 'retry' && /^\d+$/.test(value)) this.retry = Math.min(30000, Math.max(500, Number(value)))
+            else if (field === 'retry' && /^\d+$/.test(value))
+              this.retry = Math.min(30000, Math.max(500, Number(value)))
           }
-          if (data.length) this.emit(type, new MessageEvent(type, { data: data.join('\n'), lastEventId: this.lastId, origin: location.origin }))
+          if (data.length)
+            this.emit(
+              type,
+              new MessageEvent(type, { data: data.join('\n'), lastEventId: this.lastId, origin: location.origin }),
+            )
         }
       }
       socket.onerror = () => this.emit('error', new Event('error'))
       // A sleeping computer or a restarting Host comes back in minutes, not in one fixed interval:
       // every failed attempt waits twice as long as the one before, up to 30s, and a live
       // connection resets the wait.
-      socket.onclose = () => { if (this.readyState !== 2) { this.readyState = 0; this.buffer = ''; this.backoff = Math.min(30000, this.backoff ? this.backoff * 2 : this.retry); if (link) void link.probe(); this.timer = setTimeout(() => this.connect(), this.backoff) } }
+      socket.onclose = () => {
+        if (this.readyState !== 2) {
+          this.readyState = 0
+          this.buffer = ''
+          this.backoff = Math.min(30000, this.backoff ? this.backoff * 2 : this.retry)
+          if (link) void link.probe()
+          this.timer = setTimeout(() => this.connect(), this.backoff)
+        }
+      }
     }
-    close(): void { this.readyState = 2; clearTimeout(this.timer); this.socket?.close() }
+    close(): void {
+      this.readyState = 2
+      clearTimeout(this.timer)
+      this.socket?.close()
+    }
   }
-  globals.EventSource = RemoteEventSource
+  globals.EventSource = new Proxy(RemoteEventSource, {
+    construct(_Target, args: [string | URL, EventSourceInit?]) {
+      const [url, init] = args
+      const resolved = new URL(String(url), location.href).href
+      // The carrier only carries this origin. Anywhere else the browser's own EventSource owns the
+      // cross-origin rules: it reports a refusal as an error event and honours CORS.
+      if (new URL(resolved).origin !== location.origin) return new NativeEventSource(url, init)
+      return new RemoteEventSource(url, init)
+    },
+  })
 }
 /** The Host reads this same string every request, so it stays one self-contained function. */
 export function bootScript(context?: BootContext): string {
@@ -799,6 +1262,9 @@ export function injectBoot(html: string): string {
   if (!/<head(?:\s[^>]*)?>/i.test(html)) return html
   const viewport = /<meta\b[^>]*\bname=["']viewport["'][^>]*>/i.exec(html)
   const body = viewport ? html.slice(0, viewport.index) + html.slice(viewport.index + viewport[0].length) : html
-  return body.replace(/<head(?:\s[^>]*)?>/i, match => `${match}${viewport?.[0] ?? '<meta name="viewport" content="width=device-width, initial-scale=1">'}${BOOT_TAG}`)
+  return body.replace(
+    /<head(?:\s[^>]*)?>/i,
+    (match) =>
+      `${match}${viewport?.[0] ?? '<meta name="viewport" content="width=device-width, initial-scale=1">'}${BOOT_TAG}`,
+  )
 }
-

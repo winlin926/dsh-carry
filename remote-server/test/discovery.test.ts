@@ -5,15 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
 import { nodeDescriptorSchema, nodeIdentitySchema } from '../dist/remote-server/src/contract.js'
-import {
-  api,
-  hostIdentityFromKey,
-  hostRegistration,
-  randomIdentityKey,
-  registerHost,
-  startNode,
-  type TestNode,
-} from './helpers.ts'
+import { api, hostIdentityFromKey, randomIdentityKey, registerHost, startNode, type TestNode } from './helpers.ts'
 
 /** Independent expectation for a node identity: sha256(SPKI DER), 43 + 32 chars. */
 async function identityFromFile(dataDir: string): Promise<{ nodeId: string; fingerprint: string; publicKey: string }> {
@@ -53,7 +45,11 @@ test('well-known descriptor is a strict v2 service document with a persisted nod
 
     const expected = await identityFromFile(node.dataDir)
     assert.equal(result.json.node.id, expected.nodeId, 'node.id = base64url(sha256(SPKI DER)), 43 chars')
-    assert.equal(result.json.node.fingerprint, expected.fingerprint, 'node.fingerprint = first 16 digest bytes, lowercase hex')
+    assert.equal(
+      result.json.node.fingerprint,
+      expected.fingerprint,
+      'node.fingerprint = first 16 digest bytes, lowercase hex',
+    )
     assert.equal(result.json.node.publicKey, expected.publicKey)
     assert.equal(expected.nodeId.length, 43)
     assert.equal(expected.fingerprint.length, 32)
@@ -129,8 +125,16 @@ test('host identity matches src/identity.ts for an Ed25519 SPKI key', async () =
   }
 
   assert.deepEqual(identity.deriveHostIdentity(identityKey), expected)
-  assert.deepEqual(Buffer.from(identity.decodeIdentityKey(identityKey)), der, 'decodeIdentityKey returns the SPKI DER bytes')
-  assert.equal(identity.decodeIdentityKey('A'.repeat(59)), null, 'valid Base64URL that is not SPKI DER must be rejected')
+  assert.deepEqual(
+    Buffer.from(identity.decodeIdentityKey(identityKey)),
+    der,
+    'decodeIdentityKey returns the SPKI DER bytes',
+  )
+  assert.equal(
+    identity.decodeIdentityKey('A'.repeat(59)),
+    null,
+    'valid Base64URL that is not SPKI DER must be rejected',
+  )
   assert.throws(
     () => identity.deriveHostIdentity('A'.repeat(59)),
     (error: any) => error.status === 400 && error.code === 'INVALID_IDENTITY_KEY',
@@ -152,7 +156,11 @@ test('healthz and /v1/config expose the v2 service identity and no Host fields',
     assert.equal(config.json.protocol, 2)
     assert.equal(config.json.kind, 'service')
     assert.equal(Object.keys(config.json).sort().join(','), 'capabilities,kind,name,node,protocol,version')
-    assert.deepEqual(config.json.node, wellKnown.json.node, '/v1/config and well-known must publish the same node identity')
+    assert.deepEqual(
+      config.json.node,
+      wellKnown.json.node,
+      '/v1/config and well-known must publish the same node identity',
+    )
     assert.equal(config.json.hostId, undefined, '/v1/config must not expose a Host identity')
     assert.equal(config.json.fingerprint, undefined)
     assert.equal(config.headers.get('cache-control'), 'no-store')
@@ -174,17 +182,38 @@ test('node schema rejects a wrong protocol, flat Host fields or a malformed node
   assert.equal(nodeDescriptorSchema.safeParse({ ...valid, protocol: 1 }).success, false)
   assert.equal(nodeDescriptorSchema.safeParse({ ...valid, protocol: 3 }).success, false)
   assert.equal(nodeDescriptorSchema.safeParse({ ...valid, protocol: '2' }).success, false)
-  assert.equal(nodeDescriptorSchema.safeParse({ ...valid, kind: 'gateway' }).success, true, 'gateway is a valid contract kind')
+  assert.equal(
+    nodeDescriptorSchema.safeParse({ ...valid, kind: 'gateway' }).success,
+    true,
+    'gateway is a valid contract kind',
+  )
   assert.equal(nodeDescriptorSchema.safeParse({ ...valid, kind: 'peer' }).success, false)
-  assert.equal(nodeDescriptorSchema.safeParse({ ...valid, capabilities: ['cache'] }).success, false, 'pairing is required')
-  assert.equal(nodeDescriptorSchema.safeParse({ ...valid, capabilities: ['pairing', 'cache', 'telepathy'] }).success, false)
+  assert.equal(
+    nodeDescriptorSchema.safeParse({ ...valid, capabilities: ['cache'] }).success,
+    false,
+    'pairing is required',
+  )
+  assert.equal(
+    nodeDescriptorSchema.safeParse({ ...valid, capabilities: ['pairing', 'cache', 'telepathy'] }).success,
+    false,
+  )
   assert.equal(nodeDescriptorSchema.safeParse({ ...valid, capabilities: ['pairing', 'pairing'] }).success, false)
-  assert.equal(nodeDescriptorSchema.safeParse({ ...valid, hostId: 'A'.repeat(43) }).success, false, 'service descriptors carry no flat Host id')
+  assert.equal(
+    nodeDescriptorSchema.safeParse({ ...valid, hostId: 'A'.repeat(43) }).success,
+    false,
+    'service descriptors carry no flat Host id',
+  )
   assert.equal(nodeDescriptorSchema.safeParse({ ...valid, fingerprint: '0'.repeat(32) }).success, false)
   assert.equal(nodeDescriptorSchema.safeParse({ ...valid, node: undefined }).success, false)
   assert.equal(nodeDescriptorSchema.safeParse({ ...valid, node: { ...valid.node, id: 'short' } }).success, false)
-  assert.equal(nodeDescriptorSchema.safeParse({ ...valid, node: { ...valid.node, fingerprint: 'A'.repeat(32) } }).success, false)
-  assert.equal(nodeDescriptorSchema.safeParse({ ...valid, node: { ...valid.node, hostId: 'A'.repeat(43) } }).success, false)
+  assert.equal(
+    nodeDescriptorSchema.safeParse({ ...valid, node: { ...valid.node, fingerprint: 'A'.repeat(32) } }).success,
+    false,
+  )
+  assert.equal(
+    nodeDescriptorSchema.safeParse({ ...valid, node: { ...valid.node, hostId: 'A'.repeat(43) } }).success,
+    false,
+  )
   assert.equal(nodeDescriptorSchema.safeParse({ ...valid, extra: true }).success, false, 'descriptor is strict')
 })
 

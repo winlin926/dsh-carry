@@ -1,11 +1,7 @@
 import { NODE_API, type HostRegistrationResult } from '../../../../src/remote/node-api.js'
 import { hostRegistrationSchema } from '../../contract.js'
 import { ApiError, rateLimited } from '../../errors.js'
-import {
-  createToken,
-  deriveHostIdentity,
-  hashToken,
-} from '../../identity.js'
+import { createToken, deriveHostIdentity, hashToken } from '../../identity.js'
 import type { AppServices } from '../../services.js'
 import type { Router } from '../router.js'
 import { baseHeaders, readJsonBody, sendJson } from '../util.js'
@@ -19,7 +15,7 @@ import { baseHeaders, readJsonBody, sendJson } from '../util.js'
 export function registerHostRoutes(router: Router, services: AppServices): void {
   const { config, repos, sessions, auth, limiter, tunnelProxy, tunnel, logger } = services
 
-  router.add('POST', NODE_API.hosts.pattern, async ctx => {
+  router.add('POST', NODE_API.hosts.pattern, async (ctx) => {
     const decision = limiter.take('host-registration', ctx.ip, config.limits.hostRegistration)
     if (!decision.allowed) throw rateLimited(decision.retryAfterMs)
     const body = await readJsonBody(ctx.req)
@@ -62,10 +58,10 @@ export function registerHostRoutes(router: Router, services: AppServices): void 
     )
   })
 
-  router.add('GET', NODE_API.hosts.pattern, ctx => {
+  router.add('GET', NODE_API.hosts.pattern, (ctx) => {
     const context = auth.requireSession(ctx.req)
     const rows = repos.listRelationshipsForDevice(context.device.device_id)
-    const hosts = rows.flatMap(relationship => {
+    const hosts = rows.flatMap((relationship) => {
       const host = repos.findHostById(relationship.host_id)
       if (!host) return []
       return [
@@ -82,7 +78,7 @@ export function registerHostRoutes(router: Router, services: AppServices): void 
     sendJson(ctx.res, 200, { hosts }, { head: ctx.head })
   })
 
-  router.add('DELETE', NODE_API.hostDevice.pattern, async ctx => {
+  router.add('DELETE', NODE_API.hostDevice.pattern, async (ctx) => {
     const context = auth.requireSession(ctx.req)
     const hostId = ctx.params.hostId ?? ''
     const deviceId = ctx.params.deviceId ?? ''
@@ -105,7 +101,7 @@ export function registerHostRoutes(router: Router, services: AppServices): void 
 
   // A Host may delete its own registration. This is the counterpart of "remove this computer" in the
   // plugin: without it the node would keep the row and reject a later registration of the same host.
-  router.add('DELETE', NODE_API.host.pattern, async ctx => {
+  router.add('DELETE', NODE_API.host.pattern, async (ctx) => {
     const caller = auth.authenticateHostRequest(ctx.req)
     const hostId = ctx.params.hostId ?? ''
     const target = repos.findHostById(hostId)

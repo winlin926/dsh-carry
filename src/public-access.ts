@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { readPublicUrl, normalizePublicUrl, writePublicUrl } from './public-url-settings.js'
-import { createCertificateManager, migrateLegacyAccountKey, type CertificateManager, type CertificateStatus } from './acme-certificate.js'
+import {
+  createCertificateManager,
+  migrateLegacyAccountKey,
+  type CertificateManager,
+  type CertificateStatus,
+} from './acme-certificate.js'
 import { createOutboundProxy, type OutboundProxy } from './outbound-proxy.js'
 import { isPublicNodeProtocol, nodeIdentityOf, detectPublicNode, type PublicNodeDetection } from './public-node.js'
 
@@ -11,7 +16,11 @@ export const PUBLIC_PORT = (() => {
   const override = Number(process.env.DSH_RC_PUBLIC_PORT)
   return Number.isInteger(override) && override > 0 && override < 65536 ? override : 43128
 })()
-export const FRPC_CERTIFICATE_DIR = join(process.env.ProgramData ?? 'C:\\ProgramData', 'SakuraFrpService', 'FrpcWorkingDirectory')
+export const FRPC_CERTIFICATE_DIR = join(
+  process.env.ProgramData ?? 'C:\\ProgramData',
+  'SakuraFrpService',
+  'FrpcWorkingDirectory',
+)
 
 /** The three ways a public entry can fail, each with the line the panel shows. */
 export type PublicUrlFailure = 'unreachable' | 'identity' | 'tls'
@@ -19,7 +28,13 @@ export const PUBLIC_UNREACHABLE_MESSAGE = '公网节点不可达，请确认隧�
 export const PUBLIC_IDENTITY_MESSAGE = '公网入口不是本机：节点指纹与这台电脑不一致，请检查域名或隧道是否指向这台电脑。'
 export const PUBLIC_TLS_MESSAGE = '公网入口的证书或域名错误，请检查 HTTPS 证书和域名解析。'
 
-export interface PublicUrlCheck { at: number; reachable: boolean; status: number | null; failure: PublicUrlFailure | null; error: string | null }
+export interface PublicUrlCheck {
+  at: number
+  reachable: boolean
+  status: number | null
+  failure: PublicUrlFailure | null
+  error: string | null
+}
 export interface PublicAccessOptions {
   storage: string
   legacyStorage: string
@@ -46,24 +61,33 @@ export class PublicAccess {
   constructor(private readonly options: PublicAccessOptions) {
     this.now = options.now ?? Date.now
     this.settingsFile = join(options.storage, 'public-url.json')
-    this.domain = existsSync(this.settingsFile) ? readPublicUrl(this.settingsFile) : readPublicUrl(join(options.legacyStorage, 'settings.json'))
+    this.domain = existsSync(this.settingsFile)
+      ? readPublicUrl(this.settingsFile)
+      : readPublicUrl(join(options.legacyStorage, 'settings.json'))
     this.challengeDir = join(options.storage, 'acme', 'challenge')
     this.certificates = createCertificateManager({
-      domain: () => this.domain ? new URL(this.domain).hostname : undefined,
-      stateDir: join(options.storage, 'acme'), legacyStateDir: join(this.options.legacyStorage, 'acme'),
-      challengeDir: this.challengeDir, deployDir: options.certificateDir ?? FRPC_CERTIFICATE_DIR,
+      domain: () => (this.domain ? new URL(this.domain).hostname : undefined),
+      stateDir: join(options.storage, 'acme'),
+      legacyStateDir: join(this.options.legacyStorage, 'acme'),
+      challengeDir: this.challengeDir,
+      deployDir: options.certificateDir ?? FRPC_CERTIFICATE_DIR,
       proxyAddress: options.proxy,
       log: options.log,
-      beforeIssue: async domain => {
-        if (domain !== (this.domain ? new URL(this.domain).hostname : undefined)) throw new Error('公网域名已变更，请按新域名重新申请证书。')
+      beforeIssue: async (domain) => {
+        if (domain !== (this.domain ? new URL(this.domain).hostname : undefined))
+          throw new Error('公网域名已变更，请按新域名重新申请证书。')
         if (!this.active) throw new Error('远程连接未开启或公网监听已停止，不能申请证书。')
         await options.beforeIssue?.()
-      }
+      },
     })
   }
 
-  setActive(active: boolean): void { this.active = active }
-  certificateStatus(): Promise<CertificateStatus> { return this.certificates.status() }
+  setActive(active: boolean): void {
+    this.active = active
+  }
+  certificateStatus(): Promise<CertificateStatus> {
+    return this.certificates.status()
+  }
 
   async migrate(): Promise<void> {
     if (!existsSync(this.settingsFile) && this.domain) await writePublicUrl(this.settingsFile, this.domain)
@@ -98,22 +122,33 @@ export class PublicAccess {
       const node = detection.node
       // Protocol 2 carries the identity in `node`, protocol 1 keeps the same id in the flat `hostId`.
       const identity = nodeIdentityOf(node)
-      const same = node.kind === 'gateway' && isPublicNodeProtocol(node.protocol) && identity !== null && identity.id === this.options.identity.hostId && identity.fingerprint === this.options.identity.fingerprint
+      const same =
+        node.kind === 'gateway' &&
+        isPublicNodeProtocol(node.protocol) &&
+        identity !== null &&
+        identity.id === this.options.identity.hostId &&
+        identity.fingerprint === this.options.identity.fingerprint
       return same
         ? { at, reachable: true, status: 200, failure: null, error: null }
         : { at, reachable: false, status: 200, failure: 'identity', error: PUBLIC_IDENTITY_MESSAGE }
     }
     switch (detection.code) {
       // The tunnel client is not running, the domain does not resolve, or nothing answers.
-      case 'unreachable': return { at, reachable: false, status: null, failure: 'unreachable', error: PUBLIC_UNREACHABLE_MESSAGE }
+      case 'unreachable':
+        return { at, reachable: false, status: null, failure: 'unreachable', error: PUBLIC_UNREACHABLE_MESSAGE }
       // A certificate, port or DNS misconfiguration: the request never reaches a valid node document.
-      case 'not-https': case 'bad-url': case 'bad-tls': case 'redirect':
+      case 'not-https':
+      case 'bad-url':
+      case 'bad-tls':
+      case 'redirect':
         return { at, reachable: false, status: null, failure: 'tls', error: PUBLIC_TLS_MESSAGE }
       // Something answered with an HTTP error (a tunnel error page, the wrong origin, a 404): the
       // public node is not reachable, and retrying once the tunnel is fixed is the right advice.
-      case 'bad-response': return { at, reachable: false, status: null, failure: 'unreachable', error: PUBLIC_UNREACHABLE_MESSAGE }
+      case 'bad-response':
+        return { at, reachable: false, status: null, failure: 'unreachable', error: PUBLIC_UNREACHABLE_MESSAGE }
       // Something answered, but not this gateway: another Host, another service, a wrong protocol.
-      default: return { at, reachable: false, status: null, failure: 'identity', error: PUBLIC_IDENTITY_MESSAGE }
+      default:
+        return { at, reachable: false, status: null, failure: 'identity', error: PUBLIC_IDENTITY_MESSAGE }
     }
   }
 
@@ -129,7 +164,8 @@ export class PublicAccess {
   }
 
   async resetOutbound(): Promise<void> {
-    const previous = this.outbound; this.outbound = undefined
+    const previous = this.outbound
+    this.outbound = undefined
     await previous?.client.close()
   }
 }

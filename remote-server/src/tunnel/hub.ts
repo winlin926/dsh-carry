@@ -120,7 +120,7 @@ export class TunnelHub {
         this.rejectSocket(socket, status)
         return
       }
-      this.wss.handleUpgrade(req, socket, head, ws => {
+      this.wss.handleUpgrade(req, socket, head, (ws) => {
         this.onConnection(ws, host)
       })
     } catch (error) {
@@ -133,7 +133,9 @@ export class TunnelHub {
     return this.hosts.has(hostId)
   }
 
-  supportsDirect(hostId: string): boolean { return this.hosts.get(hostId)?.direct === true }
+  supportsDirect(hostId: string): boolean {
+    return this.hosts.get(hostId)?.direct === true
+  }
 
   onlineHostIds(): string[] {
     return [...this.hosts.keys()]
@@ -156,7 +158,7 @@ export class TunnelHub {
       return false
     }
     try {
-      connection.ws.send(encoded, error => {
+      connection.ws.send(encoded, (error) => {
         if (error) {
           this.deps.logger.debug({ event: 'tunnel.frame.send.failed', hostId, type: frame.t })
         }
@@ -299,7 +301,11 @@ export class TunnelHub {
     }
     const capabilities = Array.isArray(frame.capabilities) ? frame.capabilities : []
     if (!capabilities.includes('http')) {
-      this.deps.logger.warn({ event: 'tunnel.hello.rejected', hostId: connection.hostId, reason: 'HTTP_CAPABILITY_REQUIRED' })
+      this.deps.logger.warn({
+        event: 'tunnel.hello.rejected',
+        hostId: connection.hostId,
+        reason: 'HTTP_CAPABILITY_REQUIRED',
+      })
       this.abort(connection, 4001, 'http capability required')
       return
     }
@@ -332,11 +338,19 @@ export class TunnelHub {
     try {
       const host = this.deps.repos.findHostById(connection.hostId)
       if (!host) {
-        this.deps.logger.warn({ event: 'tunnel.pair.decision.rejected', hostId: connection.hostId, reason: 'HOST_UNKNOWN' })
+        this.deps.logger.warn({
+          event: 'tunnel.pair.decision.rejected',
+          hostId: connection.hostId,
+          reason: 'HOST_UNKNOWN',
+        })
         return
       }
       if (typeof requestId !== 'string' || requestId.length === 0) {
-        this.deps.logger.warn({ event: 'tunnel.pair.decision.rejected', hostId: connection.hostId, reason: 'INVALID_REQUEST_ID' })
+        this.deps.logger.warn({
+          event: 'tunnel.pair.decision.rejected',
+          hostId: connection.hostId,
+          reason: 'INVALID_REQUEST_ID',
+        })
         return
       }
       this.deps.pairing.hostDecision(host, requestId, approve)
@@ -392,7 +406,7 @@ export class TunnelHub {
         this.deps.logger.warn({ event: 'tunnel.backpressure.timeout', hostId: connection.hostId })
         return false
       }
-      await new Promise<void>(resolve => {
+      await new Promise<void>((resolve) => {
         setTimeout(resolve, DRAIN_POLL_MS)
       })
     }
@@ -426,7 +440,9 @@ export class TunnelHub {
   }
 
   private rejectSocket(socket: Duplex, status: number): void {
-    const body = JSON.stringify(errorBody(status === 401 ? 'AUTH_REQUIRED' : 'UPGRADE_REJECTED', 'The tunnel upgrade was rejected.'))
+    const body = JSON.stringify(
+      errorBody(status === 401 ? 'AUTH_REQUIRED' : 'UPGRADE_REJECTED', 'The tunnel upgrade was rejected.'),
+    )
     const head = [
       `HTTP/1.1 ${status} ${STATUS_TEXT[status] ?? 'Error'}`,
       'content-type: application/json; charset=utf-8',

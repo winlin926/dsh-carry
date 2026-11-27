@@ -1,9 +1,4 @@
-import {
-  createServer,
-  type IncomingMessage,
-  type Server,
-  type ServerResponse,
-} from 'node:http'
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { TUNNEL_PATH } from '../../src/remote/tunnel-protocol.js'
 import { AssetService } from './assets.js'
@@ -119,7 +114,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<RemoteS
   tunnel.addFrameHandler(tunnelProxy)
 
   pairing.attach({
-    isHostOnline: hostId => tunnel.isHostOnline(hostId),
+    isHostOnline: (hostId) => tunnel.isHostOnline(hostId),
     sendToHost: (hostId, frame) => tunnel.sendHostFrame(hostId, frame),
   })
   const services: AppServices = {
@@ -153,7 +148,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<RemoteS
   server.maxRequestsPerSocket = 1_000
 
   const runUpgrade = (upgrade: Promise<void>): void => {
-    void upgrade.catch(error => {
+    void upgrade.catch((error) => {
       logger.warn({ event: 'upgrade.failed', error })
     })
   }
@@ -205,7 +200,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<RemoteS
     clearInterval(sweepTimer)
     tunnelProxy.shutdown()
     tunnel.shutdown()
-    await new Promise<void>(resolve => {
+    await new Promise<void>((resolve) => {
       server.close(() => resolve())
       server.closeIdleConnections()
       server.closeAllConnections()

@@ -240,7 +240,11 @@ export class TunnelProxy implements TunnelFrameHandler {
         this.rejectSocket(socket, 401, errorBody('AUTH_REQUIRED', SESSION_REQUIRED_MESSAGE))
         return
       }
-      const decision = this.deps.limiter.take('upgrade', clientIp(req, this.deps.config), this.deps.config.limits.upgrade)
+      const decision = this.deps.limiter.take(
+        'upgrade',
+        clientIp(req, this.deps.config),
+        this.deps.config.limits.upgrade,
+      )
       if (!decision.allowed) {
         this.rejectSocket(socket, 429, errorBody('RATE_LIMITED', 'Too many upgrade attempts; retry later.', true))
         return
@@ -282,7 +286,11 @@ export class TunnelProxy implements TunnelFrameHandler {
       }
     } catch (error) {
       if (error instanceof ApiError) {
-        this.rejectSocket(socket, error.status, errorBody(error.code, error.message, error.retryAfterMs !== undefined ? true : undefined))
+        this.rejectSocket(
+          socket,
+          error.status,
+          errorBody(error.code, error.message, error.retryAfterMs !== undefined ? true : undefined),
+        )
       } else {
         this.deps.logger.warn({ event: 'tunnel.ws.upgrade.failed', error })
         try {
@@ -297,13 +305,13 @@ export class TunnelProxy implements TunnelFrameHandler {
   onFrame(hostId: string, frame: TunnelFrame, payload: Uint8Array): boolean {
     switch (frame.t) {
       case 'http.response':
-        this.enqueueHttpFrame(hostId, frame.id, exchange => this.writeResponseHead(exchange, frame))
+        this.enqueueHttpFrame(hostId, frame.id, (exchange) => this.writeResponseHead(exchange, frame))
         return true
       case 'http.chunk':
-        this.enqueueHttpFrame(hostId, frame.id, exchange => this.writeChunk(exchange, payload))
+        this.enqueueHttpFrame(hostId, frame.id, (exchange) => this.writeChunk(exchange, payload))
         return true
       case 'http.end':
-        this.enqueueHttpFrame(hostId, frame.id, exchange => this.finishHttp(exchange))
+        this.enqueueHttpFrame(hostId, frame.id, (exchange) => this.finishHttp(exchange))
         return true
       case 'http.error':
         this.onHttpError(hostId, frame)
@@ -392,7 +400,8 @@ export class TunnelProxy implements TunnelFrameHandler {
   private selectHost({ session, device }: SessionContext): string {
     const relationships = this.deps.repos.listRelationshipsForDevice(device.device_id)
     const hostId = session.bound_host_id ?? (relationships.length === 1 ? relationships[0]?.host_id : undefined)
-    if (!hostId || !relationships.some(row => row.host_id === hostId) || !this.deps.hub.isHostOnline(hostId)) throw hostOfflineError()
+    if (!hostId || !relationships.some((row) => row.host_id === hostId) || !this.deps.hub.isHostOnline(hostId))
+      throw hostOfflineError()
     return hostId
   }
 
@@ -436,7 +445,11 @@ export class TunnelProxy implements TunnelFrameHandler {
         const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array)
         for (const slice of splitTunnelPayload(buffer)) {
           if (exchange.done) return
-          const sent = await this.deps.hub.sendHostFrameAsync(exchange.hostId, { t: 'http.body', id: exchange.id }, slice)
+          const sent = await this.deps.hub.sendHostFrameAsync(
+            exchange.hostId,
+            { t: 'http.body', id: exchange.id },
+            slice,
+          )
           if (!sent) {
             this.failHttp(exchange, 502, 'TUNNEL_CLOSED', TUNNEL_CLOSED_MESSAGE)
             return
@@ -445,7 +458,7 @@ export class TunnelProxy implements TunnelFrameHandler {
       }
       if (exchange.done) return
       this.deps.hub.sendHostFrame(exchange.hostId, { t: 'http.body.end', id: exchange.id })
-    } catch (error) {
+    } catch {
       if (exchange.done) return
       this.deps.logger.warn({ event: 'tunnel.request.body.failed', id: exchange.id })
       this.failHttp(exchange, 502, 'TUNNEL_CLOSED', TUNNEL_CLOSED_MESSAGE)
@@ -462,7 +475,7 @@ export class TunnelProxy implements TunnelFrameHandler {
   }
 
   private enqueueHttp(exchange: HttpExchange, task: () => void | Promise<void>): void {
-    exchange.chain = exchange.chain.then(task).catch(error => {
+    exchange.chain = exchange.chain.then(task).catch((error) => {
       this.deps.logger.warn({ event: 'tunnel.http.write.failed', hostId: exchange.hostId, id: exchange.id, error })
       this.failHttp(exchange, 502, 'TUNNEL_ERROR', TUNNEL_ERROR_MESSAGE)
     })
@@ -470,8 +483,7 @@ export class TunnelProxy implements TunnelFrameHandler {
 
   private writeResponseHead(exchange: HttpExchange, frame: TunnelHttpResponseFrame): void {
     if (exchange.done || exchange.headersSent) return
-    const status =
-      Number.isInteger(frame.status) && frame.status >= 200 && frame.status <= 599 ? frame.status : 502
+    const status = Number.isInteger(frame.status) && frame.status >= 200 && frame.status <= 599 ? frame.status : 502
     const headers = sanitizeResponseHeaders(asTunnelHeaders(frame.headers))
     exchange.headersSent = true
     exchange.res.writeHead(status, headers)
@@ -486,7 +498,7 @@ export class TunnelProxy implements TunnelFrameHandler {
     if (exchange.done || !exchange.headersSent) return
     if (exchange.res.destroyed || exchange.res.writableEnded) return
     if (exchange.streaming) this.armIdleTimer(exchange)
-    await new Promise<void>(resolve => {
+    await new Promise<void>((resolve) => {
       exchange.res.write(Buffer.from(payload), () => resolve())
     })
   }
@@ -583,11 +595,11 @@ export class TunnelProxy implements TunnelFrameHandler {
   // --- WebSocket proxying --------------------------------------------------------
 
   private readProtocols(raw: string | string[] | undefined): string[] {
-    const value = Array.isArray(raw) ? raw.join(',') : raw ?? ''
+    const value = Array.isArray(raw) ? raw.join(',') : (raw ?? '')
     return value
       .split(',')
-      .map(part => part.trim())
-      .filter(part => part.length > 0)
+      .map((part) => part.trim())
+      .filter((part) => part.length > 0)
   }
 
   private onWsAck(hostId: string, frame: TunnelWsAckFrame): void {
@@ -611,7 +623,7 @@ export class TunnelProxy implements TunnelFrameHandler {
       this.preferredProtocols.set(exchange.req, frame.protocol)
     }
     try {
-      this.wss.handleUpgrade(exchange.req, exchange.socket, exchange.head, client => {
+      this.wss.handleUpgrade(exchange.req, exchange.socket, exchange.head, (client) => {
         this.onClientOpen(exchange, client)
       })
     } catch (error) {

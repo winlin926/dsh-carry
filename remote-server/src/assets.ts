@@ -27,8 +27,9 @@ const ALLOWED_PATH_PATTERN = /^\/[A-Za-z0-9._~!$&'()*+,;=:@%/-]{1,512}$/u
 
 function normalizeAssetPath(raw: string): string {
   if (!raw.startsWith('/')) throw ApiError.badRequest('INVALID_PATH', 'Asset path must start with "/".')
-  if (!ALLOWED_PATH_PATTERN.test(raw)) throw ApiError.badRequest('INVALID_PATH', 'Asset path contains invalid characters.')
-  if (raw.includes('//') || raw.split('/').some(segment => segment === '..' || segment === '.')) {
+  if (!ALLOWED_PATH_PATTERN.test(raw))
+    throw ApiError.badRequest('INVALID_PATH', 'Asset path contains invalid characters.')
+  if (raw.includes('//') || raw.split('/').some((segment) => segment === '..' || segment === '.')) {
     throw ApiError.badRequest('INVALID_PATH', 'Asset path must be normalized.')
   }
   return raw
@@ -45,19 +46,10 @@ export class AssetService {
     private readonly config: Config,
   ) {}
 
-  put(input: {
-    hostId: string
-    revision: string
-    path: string
-    contentType: string
-    body: Uint8Array
-  }): StoredAsset {
+  put(input: { hostId: string; revision: string; path: string; contentType: string; body: Uint8Array }): StoredAsset {
     const path = normalizeAssetPath(input.path)
     if (input.body.byteLength > this.config.assetMaxBytes) {
-      throw ApiError.payloadTooLarge(
-        'ASSET_TOO_LARGE',
-        `Asset exceeds the ${this.config.assetMaxBytes} byte limit.`,
-      )
+      throw ApiError.payloadTooLarge('ASSET_TOO_LARGE', `Asset exceeds the ${this.config.assetMaxBytes} byte limit.`)
     }
     const contentType = input.contentType.trim().toLowerCase()
     if (!/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/u.test(contentType)) {
@@ -89,7 +81,7 @@ export class AssetService {
   get(hostId: string, revision: string, path: string, ifNoneMatch: string | null): AssetResponse | null {
     const row = this.repos.findAsset(hostId, revision, path)
     if (!row) return null
-    const notModified = ifNoneMatch !== null && ifNoneMatch.split(',').some(tag => tag.trim() === row.etag)
+    const notModified = ifNoneMatch !== null && ifNoneMatch.split(',').some((tag) => tag.trim() === row.etag)
     return {
       etag: row.etag,
       contentType: row.content_type,

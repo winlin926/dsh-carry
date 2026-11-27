@@ -42,8 +42,17 @@ render();
 </body></html>`
 
 const server = createServer((req, res) => {
-  if (req.url === '/favicon.svg') { res.writeHead(200, { 'content-type': 'image/svg+xml' }); res.end(whale) }
-  else if (req.url === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); res.end(html) }
-  else { res.writeHead(404); res.end() }
+  if (req.url === '/favicon.svg') {
+    res.writeHead(200, { 'content-type': 'image/svg+xml' })
+    res.end(whale)
+  } else if (req.url === '/') {
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+    res.end(html)
+  } else {
+    res.writeHead(404)
+    res.end()
+  }
 })
-server.listen(Number(process.env.PORT) || 0, '127.0.0.1', () => console.log(`DSH 启动页预览：http://127.0.0.1:${server.address().port}/`))
+server.listen(Number(process.env.PORT) || 0, '127.0.0.1', () =>
+  console.log(`DSH 启动页预览：http://127.0.0.1:${server.address().port}/`),
+)

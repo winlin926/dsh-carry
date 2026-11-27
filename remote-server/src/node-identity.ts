@@ -81,10 +81,7 @@ function loadIdentity(file: string): NodeIdentity {
  * this process only; the file is a public identity document written atomically
  * (temporary file + rename, mode 0600).
  */
-export function loadOrCreateNodeIdentity(
-  dataDir: string,
-  now: () => Date = () => new Date(),
-): NodeIdentity {
+export function loadOrCreateNodeIdentity(dataDir: string, now: () => Date = () => new Date()): NodeIdentity {
   const file = nodeIdentityPath(dataDir)
   mkdirSync(dataDir, { recursive: true })
   if (existsSync(file)) return loadIdentity(file)

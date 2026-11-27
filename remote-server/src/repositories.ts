@@ -140,9 +140,7 @@ export class Repositories {
   }
 
   findHostByCredentialHash(credentialHash: string): HostRow | undefined {
-    return this.db
-      .prepare('SELECT * FROM hosts WHERE credential_hash = ?')
-      .get(credentialHash) as HostRow | undefined
+    return this.db.prepare('SELECT * FROM hosts WHERE credential_hash = ?').get(credentialHash) as HostRow | undefined
   }
 
   touchHost(hostId: string, now: number): void {
@@ -214,7 +212,9 @@ export class Repositories {
       .prepare('DELETE FROM pairing_tickets WHERE expires_at < ? AND request_id IS NULL')
       .run(now - 60_000)
     const requests = this.db
-      .prepare("DELETE FROM pairing_requests WHERE expires_at < ? AND state IN ('pending', 'client_approved', 'host_approved')")
+      .prepare(
+        "DELETE FROM pairing_requests WHERE expires_at < ? AND state IN ('pending', 'client_approved', 'host_approved')",
+      )
       .run(now - 60_000)
     return Number(tickets.changes) + Number(requests.changes)
   }
@@ -358,8 +358,11 @@ export class Repositories {
   }
 
   listRevokedDevices(hostId: string): string[] {
-    return (this.db.prepare('SELECT client_device_id FROM relationships WHERE host_id = ? AND revoked_at IS NOT NULL').all(hostId) as Pick<RelationshipRow, 'client_device_id'>[])
-      .map(row => row.client_device_id)
+    return (
+      this.db
+        .prepare('SELECT client_device_id FROM relationships WHERE host_id = ? AND revoked_at IS NOT NULL')
+        .all(hostId) as Pick<RelationshipRow, 'client_device_id'>[]
+    ).map((row) => row.client_device_id)
   }
 
   revokeRelationship(hostId: string, clientDeviceId: string, now: number): void {
@@ -385,13 +388,21 @@ export class Repositories {
         `INSERT INTO device_sessions (credential_hash, device_id, bound_origin, bound_host_id, created_at, last_seen_at, expires_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(session.credentialHash, session.deviceId, session.boundOrigin, session.hostId, session.now, session.now, session.expiresAt)
+      .run(
+        session.credentialHash,
+        session.deviceId,
+        session.boundOrigin,
+        session.hostId,
+        session.now,
+        session.now,
+        session.expiresAt,
+      )
   }
 
   findSession(credentialHash: string): DeviceSessionRow | undefined {
-    return this.db
-      .prepare('SELECT * FROM device_sessions WHERE credential_hash = ?')
-      .get(credentialHash) as DeviceSessionRow | undefined
+    return this.db.prepare('SELECT * FROM device_sessions WHERE credential_hash = ?').get(credentialHash) as
+      | DeviceSessionRow
+      | undefined
   }
 
   touchSession(credentialHash: string, now: number): void {

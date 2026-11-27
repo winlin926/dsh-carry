@@ -27,14 +27,42 @@ export const DIRECT_REQUEST_TIMEOUT_MS = 120_000
 export const DIRECT_SIGNAL_TTL_MS = 60_000
 
 export type DirectFrameType =
-  | 'open' | 'body' | 'end' | 'result' | 'chunk' | 'done' | 'fail' | 'cancel'
-  | 'ws.open' | 'ws.ack' | 'ws.text' | 'ws.bin' | 'ws.cont' | 'ws.close'
-  | 'ping' | 'pong' | 'hello'
+  | 'open'
+  | 'body'
+  | 'end'
+  | 'result'
+  | 'chunk'
+  | 'done'
+  | 'fail'
+  | 'cancel'
+  | 'ws.open'
+  | 'ws.ack'
+  | 'ws.text'
+  | 'ws.bin'
+  | 'ws.cont'
+  | 'ws.close'
+  | 'ping'
+  | 'pong'
+  | 'hello'
 
 const TYPES: DirectFrameType[] = [
-  'open', 'body', 'end', 'result', 'chunk', 'done', 'fail', 'cancel',
-  'ws.open', 'ws.ack', 'ws.text', 'ws.bin', 'ws.cont', 'ws.close',
-  'ping', 'pong', 'hello',
+  'open',
+  'body',
+  'end',
+  'result',
+  'chunk',
+  'done',
+  'fail',
+  'cancel',
+  'ws.open',
+  'ws.ack',
+  'ws.text',
+  'ws.bin',
+  'ws.cont',
+  'ws.close',
+  'ping',
+  'pong',
+  'hello',
 ]
 const CODES = new Map<DirectFrameType, number>(TYPES.map((type, index) => [type, index + 1]))
 const NAMES = new Map<number, DirectFrameType>(TYPES.map((type, index) => [index + 1, type]))
@@ -47,7 +75,13 @@ export interface DirectFrame {
 }
 
 export class DirectFrameError extends Error {
-  constructor(readonly code: string, message: string) { super(message); this.name = 'DirectFrameError' }
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'DirectFrameError'
+  }
 }
 
 const ID = /^[A-Za-z0-9_-]{1,64}$/
@@ -72,7 +106,8 @@ export function decodeDirectFrame(bytes: Uint8Array): DirectFrame {
   const t = NAMES.get(bytes[0]!)
   if (!t) throw new DirectFrameError('UNKNOWN_TYPE', '未知的直连帧类型。')
   const length = (bytes[1]! << 8) | bytes[2]!
-  if (length < 0 || length > 64 || bytes.length < 3 + length) throw new DirectFrameError('FRAME_INVALID', '直连帧的 id 长度不合法。')
+  if (length < 0 || length > 64 || bytes.length < 3 + length)
+    throw new DirectFrameError('FRAME_INVALID', '直连帧的 id 长度不合法。')
   const id = Buffer.from(bytes.subarray(3, 3 + length)).toString('ascii')
   if (!ID.test(id)) throw new DirectFrameError('BAD_ID', '直连帧的 id 不合法。')
   const payload = bytes.subarray(3 + length)
@@ -89,5 +124,7 @@ export function readControl(frame: DirectFrame): Record<string, unknown> {
     const value: unknown = JSON.parse(Buffer.from(frame.payload).toString('utf8') || '{}')
     if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
     return value as Record<string, unknown>
-  } catch { return {} }
+  } catch {
+    return {}
+  }
 }

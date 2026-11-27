@@ -10,37 +10,55 @@ import { Gateway, MANAGE_PATH, REMOTE_MARK } from '../src/gateway.js'
 import { IDLE_MS, MAX_DEVICES, PairingService } from '../src/pairing.js'
 import { deniedPage, pairingPage } from '../src/pages.js'
 
-const OWNER = { principal: { kind: "owner" } } as Connection.PeerScope
+const OWNER = { principal: { kind: 'owner' } } as Connection.PeerScope
 const cleanup: Array<() => Promise<unknown> | void> = []
-afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn(); vi.restoreAllMocks() })
+afterEach(async () => {
+  for (const fn of cleanup.splice(0).reverse()) await fn()
+  vi.restoreAllMocks()
+})
 function folder(): string {
-  const path = mkdtempSync(join(tmpdir(), 'dsh-rc-hardening-')); cleanup.push(() => rmSync(path, { recursive: true, force: true }))
+  const path = mkdtempSync(join(tmpdir(), 'dsh-rc-hardening-'))
+  cleanup.push(() => rmSync(path, { recursive: true, force: true }))
   return path
 }
 function pair(service: PairingService): string {
-  const claim = service.request(service.issue().token, 'Android'); service.approve(claim.id)
+  const claim = service.request(service.issue().token, 'Android')
+  service.approve(claim.id)
   return service.claim(claim.id, claim.key).credential!
 }
 /** A raw request, so the Host header can differ from the address dialled. */
 function get(port: number, headers: Record<string, string>): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const req = request({ hostname: '127.0.0.1', port, path: '/api/echo', headers }, res => {
-      let body = ''; res.setEncoding('utf8'); res.on('data', chunk => body += chunk); res.on('end', () => resolve({ status: res.statusCode ?? 0, body }))
+    const req = request({ hostname: '127.0.0.1', port, path: '/api/echo', headers }, (res) => {
+      let body = ''
+      res.setEncoding('utf8')
+      res.on('data', (chunk) => (body += chunk))
+      res.on('end', () => resolve({ status: res.statusCode ?? 0, body }))
     })
-    req.on('error', reject); req.end()
+    req.on('error', reject)
+    req.end()
   })
 }
 
 it('makes room for QR pairing without dropping an online device', () => {
   let now = 1_000_000
-  const online = new Set<string>(), revoked: string[] = []
-  const service = new PairingService({ file: join(folder(), 'devices.json'), now: () => now, onRevoke: id => revoked.push(id), isOnline: id => online.has(id) })
+  const online = new Set<string>(),
+    revoked: string[] = []
+  const service = new PairingService({
+    file: join(folder(), 'devices.json'),
+    now: () => now,
+    onRevoke: (id) => revoked.push(id),
+    isOnline: (id) => online.has(id),
+  })
   const ids: string[] = []
-  for (let i = 0; i < MAX_DEVICES; i++) { now += 1000; ids.push(pair(service).split('.')[0]!) }
+  for (let i = 0; i < MAX_DEVICES; i++) {
+    now += 1000
+    ids.push(pair(service).split('.')[0]!)
+  }
   online.add(ids[0]!)
   now += 1000
   const added = pair(service).split('.')[0]!
-  const kept = service.list().map(device => device.id)
+  const kept = service.list().map((device) => device.id)
   expect(kept).toHaveLength(MAX_DEVICES)
   expect(kept).toContain(ids[0])
   expect(kept).toContain(added)
@@ -50,18 +68,30 @@ it('makes room for QR pairing without dropping an online device', () => {
   expect(() => pair(service)).toThrow(/在线/)
 })
 
-it.each(['replace', 'expire', 'revokeAll'])('keeps previous authorization when saving %s fails', action => {
-  const root = folder(), original = join(root, 'devices.json'), blocked = join(root, 'blocked')
-  let file = original, now = 1_000_000
+it.each(['replace', 'expire', 'revokeAll'])('keeps previous authorization when saving %s fails', (action) => {
+  const root = folder(),
+    original = join(root, 'devices.json'),
+    blocked = join(root, 'blocked')
+  let file = original,
+    now = 1_000_000
   const revoked: string[] = []
-  const service = new PairingService({ get file() { return file }, now: () => now, onRevoke: id => revoked.push(id) })
+  const service = new PairingService({
+    get file() {
+      return file
+    },
+    now: () => now,
+    onRevoke: (id) => revoked.push(id),
+  })
   const credentials = Array.from({ length: MAX_DEVICES }, () => pair(service))
   writeFileSync(blocked, 'not a directory')
   file = join(blocked, 'devices.json')
   if (action === 'replace') expect(() => pair(service)).toThrow()
-  else if (action === 'expire') { now += IDLE_MS + 1; expect(() => service.list()).toThrow() }
-  else expect(() => service.revokeAll()).toThrow()
-  file = original; now = 1_000_000
+  else if (action === 'expire') {
+    now += IDLE_MS + 1
+    expect(() => service.list()).toThrow()
+  } else expect(() => service.revokeAll()).toThrow()
+  file = original
+  now = 1_000_000
   expect(service.list()).toHaveLength(MAX_DEVICES)
   expect(service.authenticate(credentials[0])).toBeDefined()
   expect(new PairingService({ file, now: () => now }).authenticate(credentials[0])).toBeDefined()
@@ -69,26 +99,48 @@ it.each(['replace', 'expire', 'revokeAll'])('keeps previous authorization when s
 })
 
 it('lists the address of the physical network before virtual adapters and unreachable ranges', () => {
-  const row = (address: string) => ({ address, family: 'IPv4' as const, internal: false, netmask: '255.255.255.0', mac: '00:00:00:00:00:00', cidr: null })
-  expect(Plugin.lanAddresses({
-    'Clash': [row('198.18.0.1')],
-    'vEthernet (WSL)': [row('172.29.16.1')],
-    'Link': [row('169.254.10.2')],
-    'WLAN': [row('192.168.1.23')],
-    'Loopback': [{ ...row('127.0.0.1'), internal: true }],
-  })).toEqual(['192.168.1.23', '172.29.16.1'])
+  const row = (address: string) => ({
+    address,
+    family: 'IPv4' as const,
+    internal: false,
+    netmask: '255.255.255.0',
+    mac: '00:00:00:00:00:00',
+    cidr: null,
+  })
+  expect(
+    Plugin.lanAddresses({
+      Clash: [row('198.18.0.1')],
+      'vEthernet (WSL)': [row('172.29.16.1')],
+      Link: [row('169.254.10.2')],
+      WLAN: [row('192.168.1.23')],
+      Loopback: [{ ...row('127.0.0.1'), internal: true }],
+    }),
+  ).toEqual(['192.168.1.23', '172.29.16.1'])
   // With nothing better, the unreachable ones are still shown rather than an empty list.
-  expect(Plugin.lanAddresses({ 'Link': [row('169.254.10.2')] })).toEqual(['169.254.10.2'])
+  expect(Plugin.lanAddresses({ Link: [row('169.254.10.2')] })).toEqual(['169.254.10.2'])
 })
 
 it('admits the addresses the computer has now, and marks what it forwards as remote', async () => {
   const upstream = createServer((req, res) => res.end(JSON.stringify({ mark: req.headers[REMOTE_MARK] })))
-  await new Promise<void>(resolve => upstream.listen(0, '127.0.0.1', resolve))
-  cleanup.push(() => new Promise<void>(resolve => { upstream.closeAllConnections(); upstream.close(() => resolve()) }))
+  await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', resolve))
+  cleanup.push(
+    () =>
+      new Promise<void>((resolve) => {
+        upstream.closeAllConnections()
+        upstream.close(() => resolve())
+      }),
+  )
   const pairing = new PairingService({ file: join(folder(), 'devices.json') })
   let addresses = ['192.168.1.23']
-  const gateway = new Gateway({ pairing, upstreamPort: (upstream.address() as { port: number }).port, upstreamCookie: () => 'host=1', manage: async () => ({}), addresses: () => addresses })
-  await gateway.listen('127.0.0.1'); cleanup.push(() => gateway.close())
+  const gateway = new Gateway({
+    pairing,
+    upstreamPort: (upstream.address() as { port: number }).port,
+    upstreamCookie: () => 'host=1',
+    manage: async () => ({}),
+    addresses: () => addresses,
+  })
+  await gateway.listen('127.0.0.1')
+  cleanup.push(() => gateway.close())
   const cookie = `dsh_rc=${pair(pairing)}`
   expect((await get(gateway.port, { host: `192.168.1.23:${gateway.port}`, cookie })).status).toBe(200)
   expect((await get(gateway.port, { host: `192.168.1.99:${gateway.port}`, cookie })).status).toBe(403)
@@ -98,8 +150,21 @@ it('admits the addresses the computer has now, and marks what it forwards as rem
   expect((await get(gateway.port, { host: `192.168.1.23:${gateway.port}`, cookie })).status).toBe(403)
   // Opened from another app: the app page is served, anything else from another site is refused.
   const local = `127.0.0.1:${gateway.port}`
-  const arriving = { host: local, cookie, 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' }
-  const page = await new Promise<number>((resolve, reject) => { const req = request({ hostname: '127.0.0.1', port: gateway.port, path: '/', headers: arriving }, res => { res.resume(); resolve(res.statusCode ?? 0) }); req.on('error', reject); req.end() })
+  const arriving = {
+    host: local,
+    cookie,
+    'sec-fetch-site': 'cross-site',
+    'sec-fetch-mode': 'navigate',
+    'sec-fetch-dest': 'document',
+  }
+  const page = await new Promise<number>((resolve, reject) => {
+    const req = request({ hostname: '127.0.0.1', port: gateway.port, path: '/', headers: arriving }, (res) => {
+      res.resume()
+      resolve(res.statusCode ?? 0)
+    })
+    req.on('error', reject)
+    req.end()
+  })
   expect(page).not.toBe(403)
   expect((await get(gateway.port, arriving)).status).toBe(403)
   // A client cannot clear or forge the marker.
@@ -107,31 +172,67 @@ it('admits the addresses the computer has now, and marks what it forwards as rem
   expect(JSON.parse(forwarded.body)).toEqual({ mark: '1' })
 })
 
-
 it('loads with default preferences when the file is damaged, and refuses forwarded calls on the local route', async () => {
-  const home = folder(), previous = process.env.DSH_HOME
+  const home = folder(),
+    previous = process.env.DSH_HOME
   process.env.DSH_HOME = home
   mkdirSync(join(home, 'dsh-remote-connect', 'default'), { recursive: true })
   writeFileSync(join(home, 'dsh-remote-connect', 'default', 'preferences.json'), '{"autoStart": tru')
-  const ctx = new Context(); let record: unknown
-  const remove = ctx.provide('credentials', { modifyRecord: async (_key: unknown, update: (value: unknown) => Promise<unknown>) => { const next = await update(record); if (next !== undefined) record = next; return record } })
-  const call = (headers: Record<string, string> = {}) => ctx.connection.createSharedFetchHandler('/api').fetch(new Request('http://desktop.internal' + MANAGE_PATH, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify({ action: 'status' }) }), OWNER)
+  const ctx = new Context()
+  let record: unknown
+  const remove = ctx.provide('credentials', {
+    modifyRecord: async (_key: unknown, update: (value: unknown) => Promise<unknown>) => {
+      const next = await update(record)
+      if (next !== undefined) record = next
+      return record
+    },
+  })
+  const call = (headers: Record<string, string> = {}) =>
+    ctx.connection.createSharedFetchHandler('/api').fetch(
+      new Request('http://desktop.internal' + MANAGE_PATH, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: JSON.stringify({ action: 'status' }),
+      }),
+      OWNER,
+    )
   try {
-    await ctx.plugin(Connection, {}); await ctx.plugin(Plugin, {})
+    await ctx.plugin(Connection, {})
+    await ctx.plugin(Plugin, {})
     await vi.waitFor(async () => expect((await call()).status).toBe(200))
-    expect(await (await call()).json()).toMatchObject({ enabled: false, autoStart: false, mode: 'lan', error: expect.stringContaining('偏好设置') })
+    expect(await (await call()).json()).toMatchObject({
+      enabled: false,
+      autoStart: false,
+      mode: 'lan',
+      error: expect.stringContaining('偏好设置'),
+    })
     expect((await call({ [REMOTE_MARK]: '1' })).status).toBe(403)
     // The accent colour is built in, so it is no longer a preference the panel can set.
     expect(await (await call()).json()).not.toHaveProperty('accent')
   } finally {
-    ctx.registry.delete(Plugin); ctx.registry.delete(Connection); await new Promise(resolve => setTimeout(resolve, 100)); await remove()
-    if (previous === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME = previous
+    ctx.registry.delete(Plugin)
+    ctx.registry.delete(Connection)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    await remove()
+    if (previous === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = previous
   }
 })
 
 it('paints every page with the one built-in accent colour', () => {
-  const node = { name: 'DeepSeek Harness', kind: 'gateway' as const, fingerprint: 'e5029063f54829c639dac06e7a3de8cd', fingerprintGroups: 'E502-9063-F548-29C6-39DA-C06E-7A3D-E8CD', protocol: 1 }
-  for (const html of [pairingPage(), pairingPage(node), deniedPage(), deniedPage('设备名与配对页不一致，本次配对已拒绝。')]) {
+  const node = {
+    name: 'DeepSeek Harness',
+    kind: 'gateway' as const,
+    fingerprint: 'e5029063f54829c639dac06e7a3de8cd',
+    fingerprintGroups: 'E502-9063-F548-29C6-39DA-C06E-7A3D-E8CD',
+    protocol: 1,
+  }
+  for (const html of [
+    pairingPage(),
+    pairingPage(node),
+    deniedPage(),
+    deniedPage('设备名与配对页不一致，本次配对已拒绝。'),
+  ]) {
     expect(html).toContain('--rc-accent:#D97757')
     expect(html).not.toContain('data-rc-accent')
   }

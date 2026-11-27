@@ -3,8 +3,15 @@ import type { ClientRequest, IncomingMessage } from 'node:http'
 import { WebSocket } from 'ws'
 import { safePath, closeCode } from '../gateway.js'
 import {
-  DIRECT_MAX_FRAME, DIRECT_REQUEST_TIMEOUT_MS, DIRECT_MARK, DirectFrameError,
-  controlPayload, decodeDirectFrame, encodeDirectFrame, readControl, type DirectFrame,
+  DIRECT_MAX_FRAME,
+  DIRECT_REQUEST_TIMEOUT_MS,
+  DIRECT_MARK,
+  DirectFrameError,
+  controlPayload,
+  decodeDirectFrame,
+  encodeDirectFrame,
+  readControl,
+  type DirectFrame,
 } from './protocol.js'
 
 /** Everything the bridge needs from the connection it rides on. */
@@ -24,7 +31,12 @@ export interface DirectBridgeOptions {
   requestTimeoutMs?: number
 }
 
-export interface DirectStats { requests: number; sockets: number; received: number; sent: number }
+export interface DirectStats {
+  requests: number
+  sockets: number
+  received: number
+  sent: number
+}
 const MAX_SOCKET_MESSAGE = 32 * 1024 * 1024
 const MAX_EXCHANGES = 32
 const RESPONSE_HIGH_WATER = 128 * 1024
@@ -35,14 +47,41 @@ const SHORT_MESSAGE_SEND_RESERVE = 128 * 1024
 
 /** Headers a frame may not control: they describe this hop, not the phone's request. */
 const BLOCKED = new Set([
-  'host', 'cookie', 'authorization', 'origin', 'referer', 'connection', 'upgrade', 'keep-alive',
-  'transfer-encoding', 'content-length', 'accept-encoding', 'sec-fetch-site', 'sec-websocket-key',
-  'sec-websocket-version', 'sec-websocket-extensions', 'sec-websocket-protocol', 'te', 'trailer',
-  'proxy-authorization', 'proxy-connection', 'upgrade-insecure-requests',
+  'host',
+  'cookie',
+  'authorization',
+  'origin',
+  'referer',
+  'connection',
+  'upgrade',
+  'keep-alive',
+  'transfer-encoding',
+  'content-length',
+  'accept-encoding',
+  'sec-fetch-site',
+  'sec-websocket-key',
+  'sec-websocket-version',
+  'sec-websocket-extensions',
+  'sec-websocket-protocol',
+  'te',
+  'trailer',
+  'proxy-authorization',
+  'proxy-connection',
+  'upgrade-insecure-requests',
 ])
 
-interface HttpCall { req: ClientRequest; res?: IncomingMessage; timer?: ReturnType<typeof setTimeout>; ended?: boolean; pump?: () => void }
-interface SocketMessage { binary: boolean; chunks: Buffer[]; size: number }
+interface HttpCall {
+  req: ClientRequest
+  res?: IncomingMessage
+  timer?: ReturnType<typeof setTimeout>
+  ended?: boolean
+  pump?: () => void
+}
+interface SocketMessage {
+  binary: boolean
+  chunks: Buffer[]
+  size: number
+}
 
 /**
  * One direct connection's traffic, carried as frames and replayed against the computer's own
@@ -58,7 +97,9 @@ export class DirectBridge {
 
   constructor(private readonly options: DirectBridgeOptions) {}
 
-  snapshot(): DirectStats { return { ...this.stats } }
+  snapshot(): DirectStats {
+    return { ...this.stats }
+  }
 
   attach(transport: DirectTransport): { handle: (data: Uint8Array) => void; dispose: () => void } {
     const send = (frame: DirectFrame): void => {
@@ -67,9 +108,12 @@ export class DirectBridge {
         const bytes = encodeDirectFrame(frame)
         this.stats.sent += bytes.length
         transport.send(bytes)
-      } catch (failure) { this.options.log?.('直连帧编码失败：' + describe(failure)) }
+      } catch (failure) {
+        this.options.log?.('直连帧编码失败：' + describe(failure))
+      }
     }
-    const reply = (t: DirectFrame['t'], id: string, value: unknown): void => send({ t, id, payload: controlPayload(value) })
+    const reply = (t: DirectFrame['t'], id: string, value: unknown): void =>
+      send({ t, id, payload: controlPayload(value) })
     const fail = (id: string, code: string, message: string): void => reply('fail', id, { code, message })
     let congested = false
     const canSendBody = (): boolean => {
@@ -86,21 +130,52 @@ export class DirectBridge {
         if (this.disposed) return
         this.stats.received += data.length
         let frame: DirectFrame
-        try { frame = decodeDirectFrame(data) } catch (failure) { this.options.log?.('直连帧被拒绝：' + describe(failure)); return }
-        try { switch (frame.t) {
-          case 'ping': reply('pong', frame.id, readControl(frame)); return
-          case 'pong': return
-          case 'open': this.open(frame.id, readControl(frame), send, fail, canSendBody); return
-          case 'body': this.write(frame.id, frame.payload); return
-          case 'end': this.endCall(frame.id); return
-          case 'cancel': this.cancel(frame.id); return
-          case 'ws.open': this.openSocket(frame.id, readControl(frame), reply, send, transport); return
-          case 'ws.text': this.startSocketMessage(frame.id, false, frame.payload); return
-          case 'ws.bin': this.startSocketMessage(frame.id, true, frame.payload); return
-          case 'ws.cont': this.continueSocketMessage(frame.id, frame.payload); return
-          case 'ws.close': this.closeSocket(frame.id, readControl(frame)); return
-          default: return
-        } } catch { fail(frame.id, 'INVALID_REQUEST', '直连请求格式不合法。') }
+        try {
+          frame = decodeDirectFrame(data)
+        } catch (failure) {
+          this.options.log?.('直连帧被拒绝：' + describe(failure))
+          return
+        }
+        try {
+          switch (frame.t) {
+            case 'ping':
+              reply('pong', frame.id, readControl(frame))
+              return
+            case 'pong':
+              return
+            case 'open':
+              this.open(frame.id, readControl(frame), send, fail, canSendBody)
+              return
+            case 'body':
+              this.write(frame.id, frame.payload)
+              return
+            case 'end':
+              this.endCall(frame.id)
+              return
+            case 'cancel':
+              this.cancel(frame.id)
+              return
+            case 'ws.open':
+              this.openSocket(frame.id, readControl(frame), reply, send, transport)
+              return
+            case 'ws.text':
+              this.startSocketMessage(frame.id, false, frame.payload)
+              return
+            case 'ws.bin':
+              this.startSocketMessage(frame.id, true, frame.payload)
+              return
+            case 'ws.cont':
+              this.continueSocketMessage(frame.id, frame.payload)
+              return
+            case 'ws.close':
+              this.closeSocket(frame.id, readControl(frame))
+              return
+            default:
+              return
+          }
+        } catch {
+          fail(frame.id, 'INVALID_REQUEST', '直连请求格式不合法。')
+        }
       },
       dispose: (): void => {
         this.disposed = true
@@ -121,27 +196,52 @@ export class DirectBridge {
         const key = name.toLowerCase()
         if (BLOCKED.has(key) || key.startsWith('x-forwarded') || key.startsWith('x-dsh-rc')) continue
         if (typeof value === 'string') headers[key] = value
-        else if (Array.isArray(value)) headers[key] = value.filter(item => typeof item === 'string').join(', ')
+        else if (Array.isArray(value)) headers[key] = value.filter((item) => typeof item === 'string').join(', ')
       }
     }
     const host = '127.0.0.1:' + port
-    return { ...headers, host, origin: 'http://' + host, 'sec-fetch-site': 'same-origin', 'accept-encoding': 'identity', [DIRECT_MARK]: this.options.mark() }
+    return {
+      ...headers,
+      host,
+      origin: 'http://' + host,
+      'sec-fetch-site': 'same-origin',
+      'accept-encoding': 'identity',
+      [DIRECT_MARK]: this.options.mark(),
+    }
   }
 
-  private open(id: string, input: Record<string, unknown>, send: (frame: DirectFrame) => void, fail: (id: string, code: string, message: string) => void, canSendBody: () => boolean): void {
-    if (this.calls.has(id) || this.sockets.has(id) || this.calls.size + this.sockets.size >= MAX_EXCHANGES) { fail(id, 'BUSY', '直连请求数量达到上限或请求重复。'); return }
+  private open(
+    id: string,
+    input: Record<string, unknown>,
+    send: (frame: DirectFrame) => void,
+    fail: (id: string, code: string, message: string) => void,
+    canSendBody: () => boolean,
+  ): void {
+    if (this.calls.has(id) || this.sockets.has(id) || this.calls.size + this.sockets.size >= MAX_EXCHANGES) {
+      fail(id, 'BUSY', '直连请求数量达到上限或请求重复。')
+      return
+    }
     const method = typeof input.method === 'string' ? input.method.toUpperCase() : 'GET'
     const path = typeof input.path === 'string' && safePath(input.path) ? input.path : undefined
-    if (!path) { fail(id, 'BAD_PATH', '直连请求路径不合法。'); return }
+    if (!path) {
+      fail(id, 'BAD_PATH', '直连请求路径不合法。')
+      return
+    }
     const port = this.options.port()
-    if (!port) { fail(id, 'NO_GATEWAY', '本机网关未开启。'); return }
+    if (!port) {
+      fail(id, 'NO_GATEWAY', '本机网关未开启。')
+      return
+    }
     this.stats.requests += 1
     const req = httpRequest({ host: '127.0.0.1', port, method, path, headers: this.headers(input, port) })
     const call: HttpCall = { req }
     this.calls.set(id, call)
     const active = () => this.calls.get(id) === call
     const progress = () => {
-      if (call.timer) { call.timer.refresh(); return }
+      if (call.timer) {
+        call.timer.refresh()
+        return
+      }
       call.timer = setTimeout(() => {
         if (!active()) return
         this.cancel(id)
@@ -149,13 +249,23 @@ export class DirectBridge {
       }, this.options.requestTimeoutMs ?? DIRECT_REQUEST_TIMEOUT_MS).unref()
     }
     progress()
-    req.on('response', res => {
-      if (!active()) { res.destroy(); return }
+    req.on('response', (res) => {
+      if (!active()) {
+        res.destroy()
+        return
+      }
       call.res = res
       const eventStream = /^text\/event-stream(?:\s*;|\s*$)/i.test(res.headers['content-type'] ?? '')
       const headers: Record<string, string | string[]> = {}
       for (const [name, value] of Object.entries(res.headers)) {
-        if (value === undefined || name === 'connection' || name === 'transfer-encoding' || name === 'keep-alive' || name === 'set-cookie') continue
+        if (
+          value === undefined ||
+          name === 'connection' ||
+          name === 'transfer-encoding' ||
+          name === 'keep-alive' ||
+          name === 'set-cookie'
+        )
+          continue
         headers[name] = value
       }
       send({ t: 'result', id, payload: controlPayload({ status: res.statusCode ?? 502, headers }) })
@@ -173,16 +283,34 @@ export class DirectBridge {
         }
         if (res.readableLength === 0) {
           res.read(0)
-          if (eventStream) { clearTimeout(call.timer); call.timer = undefined }
+          if (eventStream) {
+            clearTimeout(call.timer)
+            call.timer = undefined
+          }
         } else if (!call.timer) progress() // Even an SSE stream can stall on queued data.
       }
       call.pump = pump
       res.on('readable', pump)
-      res.on('end', () => { if (active()) { this.finish(id); send({ t: 'done', id, payload: new Uint8Array() }) } })
-      res.on('error', error => { if (active()) { this.finish(id); fail(id, 'RESPONSE_ERROR', describe(error)) } })
+      res.on('end', () => {
+        if (active()) {
+          this.finish(id)
+          send({ t: 'done', id, payload: new Uint8Array() })
+        }
+      })
+      res.on('error', (error) => {
+        if (active()) {
+          this.finish(id)
+          fail(id, 'RESPONSE_ERROR', describe(error))
+        }
+      })
       pump()
     })
-    req.on('error', error => { if (this.calls.get(id) === call) { fail(id, 'REQUEST_ERROR', describe(error)); this.finish(id) } })
+    req.on('error', (error) => {
+      if (this.calls.get(id) === call) {
+        fail(id, 'REQUEST_ERROR', describe(error))
+        this.finish(id)
+      }
+    })
     // A GET or HEAD body never arrives, so waiting for an `end` frame would hold the request open
     // for its whole timeout. Every other method waits for the phone to say the body is complete.
     if (method === 'GET' || method === 'HEAD') this.endCall(id)
@@ -199,16 +327,26 @@ export class DirectBridge {
   private write(id: string, payload: Uint8Array): void {
     const call = this.calls.get(id)
     if (!call || call.res || call.ended || !payload.byteLength) return
-    if (call.req.writableLength > 16 * 1024 * 1024) { this.cancel(id); throw new Error('Upload queue full') }
+    if (call.req.writableLength > 16 * 1024 * 1024) {
+      this.cancel(id)
+      throw new Error('Upload queue full')
+    }
     call.req.write(Buffer.from(payload))
     call.timer?.refresh()
   }
 
   private cancel(id: string): void {
     const call = this.calls.get(id)
-    if (call) { this.finish(id); call.res?.destroy(); call.req.destroy() }
+    if (call) {
+      this.finish(id)
+      call.res?.destroy()
+      call.req.destroy()
+    }
     const socket = this.sockets.get(id)
-    if (socket) { this.socketMessages.delete(id); socket.terminate() }
+    if (socket) {
+      this.socketMessages.delete(id)
+      socket.terminate()
+    }
   }
 
   private finish(id: string): void {
@@ -220,13 +358,19 @@ export class DirectBridge {
 
   private startSocketMessage(id: string, binary: boolean, payload: Uint8Array): void {
     if (this.sockets.get(id)?.readyState !== WebSocket.OPEN) return
-    if (!payload.length || payload[0] !== 0 && payload[0] !== 1 || this.socketMessages.has(id)) { this.sockets.get(id)?.close(1002); return }
+    if (!payload.length || (payload[0] !== 0 && payload[0] !== 1) || this.socketMessages.has(id)) {
+      this.sockets.get(id)?.close(1002)
+      return
+    }
     this.appendSocketMessage(id, { binary, chunks: [], size: 0 }, payload)
   }
 
   private continueSocketMessage(id: string, payload: Uint8Array): void {
     const message = this.socketMessages.get(id)
-    if (!message || !payload.length || payload[0] !== 0 && payload[0] !== 1) { this.sockets.get(id)?.close(1002); return }
+    if (!message || !payload.length || (payload[0] !== 0 && payload[0] !== 1)) {
+      this.sockets.get(id)?.close(1002)
+      return
+    }
     this.appendSocketMessage(id, message, payload)
   }
 
@@ -240,13 +384,22 @@ export class DirectBridge {
       return
     }
     message.chunks.push(chunk)
-    if (!end) { this.socketMessages.set(id, message); return }
+    if (!end) {
+      this.socketMessages.set(id, message)
+      return
+    }
     this.socketMessages.delete(id)
     const socket = this.sockets.get(id)
     if (socket?.readyState === WebSocket.OPEN) socket.send(Buffer.concat(message.chunks), { binary: message.binary })
   }
 
-  private sendSocketMessage(id: string, data: Buffer, binary: boolean, send: (frame: DirectFrame) => void, transport: DirectTransport): void {
+  private sendSocketMessage(
+    id: string,
+    data: Buffer,
+    binary: boolean,
+    send: (frame: DirectFrame) => void,
+    transport: DirectTransport,
+  ): void {
     const socket = this.sockets.get(id)
     if (socket?.readyState !== WebSocket.OPEN) return
     const type = binary ? 'ws.bin' : 'ws.text'
@@ -271,12 +424,26 @@ export class DirectBridge {
     } while (offset < data.length)
   }
 
-  private openSocket(id: string, input: Record<string, unknown>, reply: (t: DirectFrame['t'], id: string, value: unknown) => void, send: (frame: DirectFrame) => void, transport: DirectTransport): void {
+  private openSocket(
+    id: string,
+    input: Record<string, unknown>,
+    reply: (t: DirectFrame['t'], id: string, value: unknown) => void,
+    send: (frame: DirectFrame) => void,
+    transport: DirectTransport,
+  ): void {
     const path = typeof input.path === 'string' && safePath(input.path) ? input.path : undefined
-    if (!path || this.sockets.has(id) || this.calls.has(id) || this.calls.size + this.sockets.size >= MAX_EXCHANGES) { reply('ws.ack', id, { ok: false, message: '直连 WebSocket 路径不合法或连接数量达到上限。' }); return }
+    if (!path || this.sockets.has(id) || this.calls.has(id) || this.calls.size + this.sockets.size >= MAX_EXCHANGES) {
+      reply('ws.ack', id, { ok: false, message: '直连 WebSocket 路径不合法或连接数量达到上限。' })
+      return
+    }
     const port = this.options.port()
-    if (!port) { reply('ws.ack', id, { ok: false, message: '本机网关未开启。' }); return }
-    const protocols = Array.isArray(input.protocols) ? input.protocols.filter((item): item is string => typeof item === 'string') : []
+    if (!port) {
+      reply('ws.ack', id, { ok: false, message: '本机网关未开启。' })
+      return
+    }
+    const protocols = Array.isArray(input.protocols)
+      ? input.protocols.filter((item): item is string => typeof item === 'string')
+      : []
     const host = '127.0.0.1:' + port
     const socket = new WebSocket('ws://' + host + path, protocols.length ? protocols : undefined, {
       headers: { host, origin: 'http://' + host, 'sec-fetch-site': 'same-origin', [DIRECT_MARK]: this.options.mark() },
@@ -298,7 +465,7 @@ export class DirectBridge {
       if (opened) reply('ws.close', id, { code, reason: reason.toString('utf8') })
       else reply('ws.ack', id, { ok: false, message: '网关关闭了 WebSocket 连接。' })
     })
-    socket.on('error', failure => {
+    socket.on('error', (failure) => {
       if (opened) return
       reply('ws.ack', id, { ok: false, message: describe(failure) })
     })
@@ -310,8 +477,11 @@ export class DirectBridge {
     this.socketMessages.delete(id)
     const code = typeof input.code === 'number' ? input.code : 1000
     const reason = typeof input.reason === 'string' ? input.reason : ''
-    try { socket.close(closeCode(code), reason) }
-    catch { socket.terminate() }
+    try {
+      socket.close(closeCode(code), reason)
+    } catch {
+      socket.terminate()
+    }
   }
 }
 

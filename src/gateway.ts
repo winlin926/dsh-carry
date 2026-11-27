@@ -18,7 +18,14 @@ import { BOOT_PATH, injectBoot, type BootContext } from './boot.js'
 import { PREVIEW_MIME, PREVIEW_PREFIX, WorkspacePreviews, previewEntry } from './workspace-preview.js'
 import type { LanTlsMaterial } from './lan-tls.js'
 import { fingerprintGroupsOf } from './host-identity.js'
-import { PUBLIC_NODE_PATH, PUBLIC_NODE_PROTOCOL_V2, isPublicNodeProtocol, nodeIdentityOf, type PublicNodeDiscovery, type PublicNodeIdentityFields } from './public-node.js'
+import {
+  PUBLIC_NODE_PATH,
+  PUBLIC_NODE_PROTOCOL_V2,
+  isPublicNodeProtocol,
+  nodeIdentityOf,
+  type PublicNodeDiscovery,
+  type PublicNodeIdentityFields,
+} from './public-node.js'
 import { PREVIEW_WORKER_PATH, previewWorkerScript } from './preview-worker.js'
 import { DIRECT_MARK, DIRECT_SIGNAL_PATH, RELAY_MARK } from './direct/protocol.js'
 
@@ -84,9 +91,20 @@ export function safePath(path: string): boolean {
   try {
     const pathname = path.split('?')[0]!
     let decoded = pathname
-    for (let i = 0; i < 3; i++) { const next = decodeURIComponent(decoded); if (next === decoded) break; decoded = next }
-    return !decoded.startsWith('//') && !decoded.includes('\\') && !/[\x00-\x1f]/.test(decoded) && !decoded.split('/').some(part => part === '..' || part === '.')
-  } catch { return false }
+    for (let i = 0; i < 3; i++) {
+      const next = decodeURIComponent(decoded)
+      if (next === decoded) break
+      decoded = next
+    }
+    return (
+      !decoded.startsWith('//') &&
+      !decoded.includes('\\') &&
+      !/[\x00-\x1f]/.test(decoded) &&
+      !decoded.split('/').some((part) => part === '..' || part === '.')
+    )
+  } catch {
+    return false
+  }
 }
 
 /** `WebSocket.OPEN`, without needing the class at hand. */
@@ -94,7 +112,10 @@ const OPEN = 1
 
 /** `ws` throws on a close code it may not send, and a Host close frame can carry 1005/1006. */
 export function closeCode(code: number): number {
-  return (code >= 1000 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006) || (code >= 3000 && code <= 4999) ? code : 1011
+  return (code >= 1000 && code <= 1014 && code !== 1004 && code !== 1005 && code !== 1006) ||
+    (code >= 3000 && code <= 4999)
+    ? code
+    : 1011
 }
 
 /** Authenticates every remote request before the privileged loopback leg. */
@@ -111,32 +132,73 @@ export class Gateway {
   private readonly authorities = new Set<string>()
   private readonly previews = new WorkspacePreviews()
   port = 0
-  constructor(private readonly options: GatewayOptions) { this.lanTls = options.lanTls }
+  constructor(private readonly options: GatewayOptions) {
+    this.lanTls = options.lanTls
+  }
   /** Compression is on unless the user turns it off; both legs read it once per connection. */
-  private get deflate(): boolean { return this.options.websocketCompression !== false }
-  allowAuthority(authority: string): void { this.authorities.add(authority.toLowerCase()) }
-  disallowAuthority(authority: string): void { this.authorities.delete(authority.toLowerCase()) }
+  private get deflate(): boolean {
+    return this.options.websocketCompression !== false
+  }
+  allowAuthority(authority: string): void {
+    this.authorities.add(authority.toLowerCase())
+  }
+  disallowAuthority(authority: string): void {
+    this.authorities.delete(authority.toLowerCase())
+  }
   private validHost(req: IncomingMessage): boolean {
     const host = req.headers.host?.toLowerCase()
     if (!host) return false
     if (this.lanTls) return host === new URL(this.lanTls.origin).host
     const publicHost = this.options.public?.()?.domain
-    return this.authorities.has(host) || (publicHost !== null && publicHost !== undefined && host === new URL(publicHost).host.toLowerCase()) || (this.options.addresses?.().some(address => host === `${address}:${this.port}`) ?? false)
+    return (
+      this.authorities.has(host) ||
+      (publicHost !== null && publicHost !== undefined && host === new URL(publicHost).host.toLowerCase()) ||
+      (this.options.addresses?.().some((address) => host === `${address}:${this.port}`) ?? false)
+    )
   }
   async listen(host: '127.0.0.1' | '0.0.0.0', port = 0): Promise<number> {
     if (this.server) throw new Error('远程网关已启动。')
-    if (this.lanTls && port !== Number(new URL(this.lanTls.origin).port || 443)) throw new Error('局域网 HTTPS 监听端口必须与配置地址一致。')
+    if (this.lanTls && port !== Number(new URL(this.lanTls.origin).port || 443))
+      throw new Error('局域网 HTTPS 监听端口必须与配置地址一致。')
     this.ws ??= await import('ws')
-    this.wss ??= new this.ws.WebSocketServer({ noServer: true, maxPayload: 32 * 1024 * 1024, perMessageDeflate: this.deflate })
-    const listener = (req: IncomingMessage, res: ServerResponse): void => { void this.handle(req, res).catch(() => { if (!res.headersSent) json(res, 500, { error: '请求处理失败，请在本机查看状态。' }); else res.destroy() }) }
-    const server = this.lanTls ? createSecureServer({ cert: this.lanTls.cert, key: this.lanTls.key }, listener) : createServer(listener)
+    this.wss ??= new this.ws.WebSocketServer({
+      noServer: true,
+      maxPayload: 32 * 1024 * 1024,
+      perMessageDeflate: this.deflate,
+    })
+    const listener = (req: IncomingMessage, res: ServerResponse): void => {
+      void this.handle(req, res).catch(() => {
+        if (!res.headersSent) json(res, 500, { error: '请求处理失败，请在本机查看状态。' })
+        else res.destroy()
+      })
+    }
+    const server = this.lanTls
+      ? createSecureServer({ cert: this.lanTls.cert, key: this.lanTls.key }, listener)
+      : createServer(listener)
     this.server = server
-    server.on('connection', socket => { this.sockets.add(socket); socket.on('error', () => {}); socket.once('close', () => this.sockets.delete(socket)) })
-    server.on('upgrade', (req, socket, head) => { socket.on('error', () => {}); void this.upgrade(req, socket, head).catch(() => socket.destroy()) })
-    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, host, () => { server.off('error', reject); resolve() }) })
-    const address = server.address(); if (!address || typeof address === 'string') throw new Error('无法读取网关端口。')
+    server.on('connection', (socket) => {
+      this.sockets.add(socket)
+      socket.on('error', () => {})
+      socket.once('close', () => this.sockets.delete(socket))
+    })
+    server.on('upgrade', (req, socket, head) => {
+      socket.on('error', () => {})
+      void this.upgrade(req, socket, head).catch(() => socket.destroy())
+    })
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(port, host, () => {
+        server.off('error', reject)
+        resolve()
+      })
+    })
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('无法读取网关端口。')
     this.port = address.port
-    if (!this.lanTls) { this.allowAuthority(`127.0.0.1:${this.port}`); this.allowAuthority(`localhost:${this.port}`) }
+    if (!this.lanTls) {
+      this.allowAuthority(`127.0.0.1:${this.port}`)
+      this.allowAuthority(`localhost:${this.port}`)
+    }
     return this.port
   }
   reloadLanCertificate(material: LanTlsMaterial): void {
@@ -146,41 +208,82 @@ export class Gateway {
     this.server.setSecureContext({ cert: material.cert, key: material.key })
     this.lanTls = material
   }
-  private sameOrigin(req: IncomingMessage): boolean { return sameOrigin(req, this.lanTls?.origin) }
+  private sameOrigin(req: IncomingMessage): boolean {
+    return sameOrigin(req, this.lanTls?.origin)
+  }
   private publicRequest(req: IncomingMessage): boolean {
     if (this.relayDevice(req)) return true
     if (this.lanTls) return false
     const access = this.options.public?.()
     if (!access?.domain) return false
     if (req.headers.host?.toLowerCase() === new URL(access.domain).host.toLowerCase()) return true
-    return Object.keys(req.headers).some(name => name === 'forwarded' || name === 'x-real-ip' || name.startsWith('x-forwarded-') || name.startsWith('cf-'))
+    return Object.keys(req.headers).some(
+      (name) =>
+        name === 'forwarded' || name === 'x-real-ip' || name.startsWith('x-forwarded-') || name.startsWith('cf-'),
+    )
   }
   private async acme(req: IncomingMessage, res: ServerResponse, pathname: string): Promise<boolean> {
     if (!pathname.startsWith(ACME_CHALLENGE_PREFIX)) return false
-    const name = pathname.slice(ACME_CHALLENGE_PREFIX.length), directory = this.options.public?.()?.challengeDir
-    if (req.method !== 'GET' || !directory || !/^[A-Za-z0-9_-]{1,128}$/.test(name)) { json(res, 404, { error: 'not found' }); return true }
+    const name = pathname.slice(ACME_CHALLENGE_PREFIX.length),
+      directory = this.options.public?.()?.challengeDir
+    if (req.method !== 'GET' || !directory || !/^[A-Za-z0-9_-]{1,128}$/.test(name)) {
+      json(res, 404, { error: 'not found' })
+      return true
+    }
     try {
       const content = await readFile(join(directory, name))
-      res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' }); res.end(content)
-    } catch { json(res, 404, { error: 'not found' }) }
+      res.writeHead(200, {
+        'content-type': 'text/plain; charset=utf-8',
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+      })
+      res.end(content)
+    } catch {
+      json(res, 404, { error: 'not found' })
+    }
     return true
   }
   private track(deviceId: string, cancel: () => void): () => void {
-    let set = this.active.get(deviceId); if (!set) this.active.set(deviceId, set = new Set())
+    let set = this.active.get(deviceId)
+    if (!set) {
+      set = new Set()
+      this.active.set(deviceId, set)
+    }
     set.add(cancel)
-    return () => { set!.delete(cancel); if (!set!.size) this.active.delete(deviceId) }
+    return () => {
+      set!.delete(cancel)
+      if (!set!.size) this.active.delete(deviceId)
+    }
   }
-  onlineIds(): string[] { return [...this.active.keys()] }
-  route(id: string): SessionRoute | undefined { return [...(this.routes.get(id)?.values() ?? [])].at(-1) }
-  revoke(id: string): void { this.routes.delete(id); this.previews.revoke(id); this.options.direct?.closeDevice?.(id); for (const cancel of [...this.active.get(id) ?? []]) cancel(); this.active.delete(id) }
-  private markedDevice(req: IncomingMessage, header: string, resolve?: (mark: string) => string | undefined): Device | undefined {
+  onlineIds(): string[] {
+    return [...this.active.keys()]
+  }
+  route(id: string): SessionRoute | undefined {
+    return [...(this.routes.get(id)?.values() ?? [])].at(-1)
+  }
+  revoke(id: string): void {
+    this.routes.delete(id)
+    this.previews.revoke(id)
+    this.options.direct?.closeDevice?.(id)
+    for (const cancel of [...(this.active.get(id) ?? [])]) cancel()
+    this.active.delete(id)
+  }
+  private markedDevice(
+    req: IncomingMessage,
+    header: string,
+    resolve?: (mark: string) => string | undefined,
+  ): Device | undefined {
     const mark = req.headers[header]
     if (typeof mark !== 'string' || !isLoopback(req.socket.remoteAddress)) return undefined
     const id = resolve?.(mark)
     return id ? this.options.pairing.authenticateDevice(id) : undefined
   }
-  private directDevice(req: IncomingMessage): Device | undefined { return this.markedDevice(req, DIRECT_MARK, this.options.direct?.resolve) }
-  private relayDevice(req: IncomingMessage): Device | undefined { return this.markedDevice(req, RELAY_MARK, this.options.relayDevice) }
+  private directDevice(req: IncomingMessage): Device | undefined {
+    return this.markedDevice(req, DIRECT_MARK, this.options.direct?.resolve)
+  }
+  private relayDevice(req: IncomingMessage): Device | undefined {
+    return this.markedDevice(req, RELAY_MARK, this.options.relayDevice)
+  }
   private device(req: IncomingMessage): Device | undefined {
     return this.directDevice(req) ?? this.relayDevice(req) ?? this.options.pairing.authenticate(cookie(req))
   }
@@ -193,10 +296,14 @@ export class Gateway {
   }
   private rate(req: IncomingMessage): boolean {
     const claim = req.url?.startsWith('/rc/pair/claim') === true
-    const key = `${req.socket.remoteAddress ?? 'unknown'}:${claim ? 'claim' : 'request'}`, now = Date.now()
+    const key = `${req.socket.remoteAddress ?? 'unknown'}:${claim ? 'claim' : 'request'}`,
+      now = Date.now()
     if (this.rates.size > 1024) for (const [ip, row] of this.rates) if (row.until < now) this.rates.delete(ip)
     let row = this.rates.get(key)
-    if (!row || row.until < now) this.rates.set(key, row = { count: 0, until: now + 60_000 })
+    if (!row || row.until < now) {
+      row = { count: 0, until: now + 60_000 }
+      this.rates.set(key, row)
+    }
     return ++row.count <= (claim ? 1000 : 120)
   }
   /**
@@ -205,11 +312,23 @@ export class Gateway {
    * so it cannot become a way around pairing for any other route.
    */
   private discovery(req: IncomingMessage, res: ServerResponse): void {
-    if (req.method !== 'GET' && req.method !== 'HEAD') { json(res, 405, { error: '发现接口只支持 GET 或 HEAD。' }); return }
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      json(res, 405, { error: '发现接口只支持 GET 或 HEAD。' })
+      return
+    }
     const document = this.options.discovery
-    if (!document) { json(res, 404, { error: 'not found' }); return }
+    if (!document) {
+      json(res, 404, { error: 'not found' })
+      return
+    }
     const payload = JSON.stringify(document)
-    res.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-content-type-options': 'nosniff', 'content-length': Buffer.byteLength(payload) })
+    res.writeHead(200, {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store',
+      'referrer-policy': 'no-referrer',
+      'x-content-type-options': 'nosniff',
+      'content-length': Buffer.byteLength(payload),
+    })
     // HEAD reports the bytes a GET would return without sending them.
     res.end(req.method === 'HEAD' ? undefined : payload)
   }
@@ -221,14 +340,23 @@ export class Gateway {
       const node = discovery.node
       return node ? { id: node.id, fingerprint: node.fingerprint } : undefined
     }
-    return discovery.hostId && discovery.fingerprint ? { id: discovery.hostId, fingerprint: discovery.fingerprint } : undefined
+    return discovery.hostId && discovery.fingerprint
+      ? { id: discovery.hostId, fingerprint: discovery.fingerprint }
+      : undefined
   }
   /** The public pairing page shows the node before anything is sent; LAN pages stay as they were. */
   private pairingNode(): PairingNode | undefined {
     const discovery = this.options.discovery
     const identity = this.hostIdentity()
     if (!discovery || !identity || this.lanTls) return undefined
-    return { name: discovery.name, kind: discovery.kind, fingerprint: identity.fingerprint, fingerprintGroups: fingerprintGroupsOf(identity.fingerprint), publicKey: discovery.node?.publicKey ?? null, protocol: discovery.protocol }
+    return {
+      name: discovery.name,
+      kind: discovery.kind,
+      fingerprint: identity.fingerprint,
+      fingerprintGroups: fingerprintGroupsOf(identity.fingerprint),
+      publicKey: discovery.node?.publicKey ?? null,
+      protocol: discovery.protocol,
+    }
   }
   /** The LAN origin of this same computer while the public entry runs; nothing else may be a fallback target. */
   private lanFallback(): string | undefined {
@@ -245,8 +373,13 @@ export class Gateway {
     if (!expected) return 'identity'
     try {
       const response = await globalThis.fetch(origin + PUBLIC_NODE_PATH, {
-        method: 'GET', redirect: 'manual', credentials: 'omit', cache: 'no-store',
-        headers: { accept: 'application/json' }, referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(3_000),
+        method: 'GET',
+        redirect: 'manual',
+        credentials: 'omit',
+        cache: 'no-store',
+        headers: { accept: 'application/json' },
+        referrerPolicy: 'no-referrer',
+        signal: AbortSignal.timeout(3_000),
       })
       if (response.status !== 200 || response.type === 'opaqueredirect') return 'lan-unavailable'
       const body: unknown = await response.json()
@@ -255,35 +388,72 @@ export class Gateway {
       if (!isPublicNodeProtocol(node.protocol) || node.kind !== 'gateway') return 'identity'
       const actual = nodeIdentityOf(node)
       return actual?.id === expected.id && actual.fingerprint === expected.fingerprint ? 'same' : 'identity'
-    } catch { return 'lan-unavailable' }
+    } catch {
+      return 'lan-unavailable'
+    }
   }
   private bootContext(publicRequest: boolean, offerDirect: boolean): BootContext {
-    const identity = this.hostIdentity(), lan = publicRequest ? this.lanFallback() : undefined
-    const direct = offerDirect && this.options.direct && !this.lanTls ? { signal: DIRECT_SIGNAL_PATH, preference: this.options.direct.preference?.() ?? 'lan' } : undefined
-    return { entry: publicRequest ? 'public' : 'lan', ...(identity && lan ? { fallback: { node: identity, hostId: identity.id, fingerprint: identity.fingerprint, url: lan } } : {}), ...(direct ? { direct } : {}) }
+    const identity = this.hostIdentity(),
+      lan = publicRequest ? this.lanFallback() : undefined
+    const direct =
+      offerDirect && this.options.direct && !this.lanTls
+        ? { signal: DIRECT_SIGNAL_PATH, preference: this.options.direct.preference?.() ?? 'lan' }
+        : undefined
+    return {
+      entry: publicRequest ? 'public' : 'lan',
+      ...(identity && lan
+        ? { fallback: { node: identity, hostId: identity.id, fingerprint: identity.fingerprint, url: lan } }
+        : {}),
+      ...(direct ? { direct } : {}),
+    }
   }
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    if (!safePath(req.url ?? '/') || !this.validHost(req)) { json(res, 403, { error: '不受信任的访问地址。' }); return }
+    if (!safePath(req.url ?? '/') || !this.validHost(req)) {
+      json(res, 403, { error: '不受信任的访问地址。' })
+      return
+    }
     const url = new URL(req.url ?? '/', 'http://gateway.invalid')
-    if (url.pathname === PUBLIC_NODE_PATH) { this.discovery(req, res); return }
+    if (url.pathname === PUBLIC_NODE_PATH) {
+      this.discovery(req, res)
+      return
+    }
     const publicRequest = this.publicRequest(req)
     if (url.pathname.startsWith(ACME_CHALLENGE_PREFIX)) {
-      if (!publicRequest) { json(res, 404, { error: 'not found' }); return }
+      if (!publicRequest) {
+        json(res, 404, { error: 'not found' })
+        return
+      }
       if (await this.acme(req, res, url.pathname)) return
     }
     if (url.pathname === '/rc/health') {
-      if (!publicRequest) { json(res, 404, { error: 'not found' }); return }
-      json(res, 200, { ok: true, service: 'dsh-remote-connect', instanceId: this.options.public?.()?.instanceId }); return
+      if (!publicRequest) {
+        json(res, 404, { error: 'not found' })
+        return
+      }
+      json(res, 200, { ok: true, service: 'dsh-remote-connect', instanceId: this.options.public?.()?.instanceId })
+      return
     }
     if (url.pathname === '/pair' && req.method === 'GET') {
       // The public page starts with what node it reached: the browser and the computer each confirm
       // this same identity before any device cookie is issued. A LAN page keeps its single QR flow.
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY' })
-      res.end(pairingPage(publicRequest ? this.pairingNode() : undefined, pageLanguage(req))); return
+      res.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+        'referrer-policy': 'no-referrer',
+        'x-frame-options': 'DENY',
+      })
+      res.end(pairingPage(publicRequest ? this.pairingNode() : undefined, pageLanguage(req)))
+      return
     }
     if (url.pathname === '/rc/pair/request' || url.pathname === '/rc/pair/claim') {
-      if (req.method !== 'POST' || !this.sameOrigin(req)) { json(res, 403, { error: '需要同源 POST 请求。' }); return }
-      if (!this.rate(req)) { json(res, 429, { error: '请求过于频繁，请稍后再试。', code: 'pairing_busy' }); return }
+      if (req.method !== 'POST' || !this.sameOrigin(req)) {
+        json(res, 403, { error: '需要同源 POST 请求。' })
+        return
+      }
+      if (!this.rate(req)) {
+        json(res, 429, { error: '请求过于频繁，请稍后再试。', code: 'pairing_busy' })
+        return
+      }
       try {
         const input = await body(req)
         if (url.pathname.endsWith('/request')) {
@@ -295,42 +465,83 @@ export class Gateway {
             if (!expected || String(input.fingerprint ?? '') !== expected) {
               const reason = '配对页面的主机指纹与这台电脑不一致，请重新打开配对页。'
               this.options.pairing.reportFailure('', reason)
-              json(res, 403, { error: reason, code: 'fingerprint_mismatch' }); return
+              json(res, 403, { error: reason, code: 'fingerprint_mismatch' })
+              return
             }
           }
-          json(res, 200, this.options.pairing.request(String(input.token ?? ''), req.headers['user-agent'] ?? '', req.headers.host, typeof input.model === 'string' ? input.model : undefined, publicRequest ? 'public' : 'lan', publicRequest))
+          json(
+            res,
+            200,
+            this.options.pairing.request(
+              String(input.token ?? ''),
+              req.headers['user-agent'] ?? '',
+              req.headers.host,
+              typeof input.model === 'string' ? input.model : undefined,
+              publicRequest ? 'public' : 'lan',
+              publicRequest,
+            ),
+          )
         } else {
           const result = this.options.pairing.claim(String(input.id ?? ''), String(input.key ?? ''))
-          if (result.credential) res.setHeader('set-cookie', this.cookieHeader(result.credential, !!this.lanTls || publicRequest))
+          if (result.credential)
+            res.setHeader('set-cookie', this.cookieHeader(result.credential, !!this.lanTls || publicRequest))
           json(res, 200, { state: result.state })
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : '配对失败。'
         // Ticket expired or already used: the browser is told, and so is the panel.
         this.options.pairing.reportFailure('', message)
-        json(res, error instanceof PairingError && error.code === 'pairing_busy' ? 429 : 400, { error: message, ...(error instanceof PairingError ? { code: error.code } : {}) })
+        json(res, error instanceof PairingError && error.code === 'pairing_busy' ? 429 : 400, {
+          error: message,
+          ...(error instanceof PairingError ? { code: error.code } : {}),
+        })
       }
       return
     }
     // A boot that only fails on the phone would otherwise be undebuggable: accept one small
     // diagnostic report per page load even from unpaired devices, and note who did report.
     if (url.pathname === '/rc/boot-report') {
-      if (req.method !== 'POST' || !this.sameOrigin(req)) { json(res, 403, { error: '需要同源 POST 请求。' }); return }
-      if (!this.rate(req)) { json(res, 429, { error: '请求过于频繁，请稍后再试。' }); return }
+      if (req.method !== 'POST' || !this.sameOrigin(req)) {
+        json(res, 403, { error: '需要同源 POST 请求。' })
+        return
+      }
+      if (!this.rate(req)) {
+        json(res, 429, { error: '请求过于频繁，请稍后再试。' })
+        return
+      }
       try {
         const reporter = this.device(req)
-        this.options.onBootReport?.(await body(req, 8192), reporter ? { id: reporter.id, name: reporter.name } : undefined)
-      } catch { /* a malformed report is dropped, never a reason to fail the page */ }
-      res.writeHead(204); res.end()
+        this.options.onBootReport?.(
+          await body(req, 8192),
+          reporter ? { id: reporter.id, name: reporter.name } : undefined,
+        )
+      } catch {
+        /* a malformed report is dropped, never a reason to fail the page */
+      }
+      res.writeHead(204)
+      res.end()
       return
     }
     if (url.pathname.startsWith(PREVIEW_PREFIX)) {
       const preview = this.previews.match(url.pathname)
       // Images and styles from an opaque origin may be marked cross-site without an Origin
       // header. The unguessable, read-only capability path is their authorization.
-      if (!['GET', 'HEAD'].includes(req.method ?? '') || (req.headers.origin && req.headers.origin !== 'null' && !this.sameOrigin(req))) { json(res, 403, { error: '拒绝跨站请求。' }); return }
-      if (!preview) { json(res, 404, { error: '预览已过期，请在对话中重新打开。' }); return }
-      const untrack = this.track(preview.deviceId, () => { req.destroy(); res.destroy() }); res.once('close', untrack)
+      if (
+        !['GET', 'HEAD'].includes(req.method ?? '') ||
+        (req.headers.origin && req.headers.origin !== 'null' && !this.sameOrigin(req))
+      ) {
+        json(res, 403, { error: '拒绝跨站请求。' })
+        return
+      }
+      if (!preview) {
+        json(res, 404, { error: '预览已过期，请在对话中重新打开。' })
+        return
+      }
+      const untrack = this.track(preview.deviceId, () => {
+        req.destroy()
+        res.destroy()
+      })
+      res.once('close', untrack)
       await this.previews.serve(preview, req, res)
       return
     }
@@ -341,73 +552,151 @@ export class Gateway {
       if (req.headers.accept?.includes('text/html') && req.method === 'GET') {
         // A fallback landing without a LAN authorization is told to scan again on this same computer.
         const language = pageLanguage(req)
-        const reason = url.searchParams.get('rc') === 'lan'
-          ? language === 'en' ? 'This device has no LAN authorization for this computer.' : '这台设备没有这台电脑的局域网授权，不能从公网连接自动切换。'
-          : undefined
-        res.writeHead(403, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' }); res.end(deniedPage(reason, language))
-      }
-      else json(res, 403, { error: '设备尚未配对或授权已撤销。', code: 'unpaired' })
-      req.resume(); return
+        const reason =
+          url.searchParams.get('rc') === 'lan'
+            ? language === 'en'
+              ? 'This device has no LAN authorization for this computer.'
+              : '这台设备没有这台电脑的局域网授权，不能从公网连接自动切换。'
+            : undefined
+        res.writeHead(403, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+        res.end(deniedPage(reason, language))
+      } else json(res, 403, { error: '设备尚未配对或授权已撤销。', code: 'unpaired' })
+      req.resume()
+      return
     }
     // Arriving from elsewhere may only open the app page itself; that reads nothing and changes nothing.
-    const opening = req.method === 'GET' && req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document' && (url.pathname === '/' || url.pathname === '/index.html')
-    if (!this.sameOrigin(req) && !opening) { json(res, 403, { error: '拒绝跨站请求。' }); return }
+    const opening =
+      req.method === 'GET' &&
+      req.headers['sec-fetch-mode'] === 'navigate' &&
+      req.headers['sec-fetch-dest'] === 'document' &&
+      (url.pathname === '/' || url.pathname === '/index.html')
+    if (!this.sameOrigin(req) && !opening) {
+      json(res, 403, { error: '拒绝跨站请求。' })
+      return
+    }
     // A paired browser whose public connection died asks whether this computer's LAN entry is the
     // same Host. Only then may it navigate there; the browser verifies this answer against the
     // identity the boot script received, so a wrong or forged URL can never be followed.
     if (url.pathname === FALLBACK_PATH) {
-      if (req.method !== 'POST' || !this.sameOrigin(req)) { json(res, 403, { error: '需要同源 POST 请求。' }); return }
-      if (!this.rate(req)) { json(res, 429, { error: '请求过于频繁，请稍后再试。' }); return }
-      const lan = this.lanFallback(), identity = this.hostIdentity()
-      if (!lan) { json(res, 200, { sameHost: false, reason: 'no-lan-entry' }); return }
-      if (!identity) { json(res, 200, { sameHost: false, reason: 'no-identity' }); return }
+      if (req.method !== 'POST' || !this.sameOrigin(req)) {
+        json(res, 403, { error: '需要同源 POST 请求。' })
+        return
+      }
+      if (!this.rate(req)) {
+        json(res, 429, { error: '请求过于频繁，请稍后再试。' })
+        return
+      }
+      const lan = this.lanFallback(),
+        identity = this.hostIdentity()
+      if (!lan) {
+        json(res, 200, { sameHost: false, reason: 'no-lan-entry' })
+        return
+      }
+      if (!identity) {
+        json(res, 200, { sameHost: false, reason: 'no-identity' })
+        return
+      }
       const match = await this.checkLanNode(lan)
-      if (match !== 'same') { json(res, 200, { sameHost: false, reason: match }); return }
+      if (match !== 'same') {
+        json(res, 200, { sameHost: false, reason: match })
+        return
+      }
       // Protocol 2 identity plus the flat aliases an older boot script may still compare.
-      json(res, 200, { sameHost: true, url: lan, node: identity, hostId: identity.id, fingerprint: identity.fingerprint })
+      json(res, 200, {
+        sameHost: true,
+        url: lan,
+        node: identity,
+        hostId: identity.id,
+        fingerprint: identity.fingerprint,
+      })
       return
     }
     // Answer a direct line's offer. The device comes from this request's own cookie, so an
     // unpaired browser cannot create a channel at all.
     if (url.pathname === DIRECT_SIGNAL_PATH) {
-      if (!this.options.direct) { json(res, 404, { error: '直连未启用。' }); return }
-      if (req.method === 'GET') {
-        res.writeHead(204, { 'cache-control': 'no-store', 'x-dsh-line-preference': this.options.direct.preference?.() ?? 'lan' }); res.end(); return
+      if (!this.options.direct) {
+        json(res, 404, { error: '直连未启用。' })
+        return
       }
-      if (req.method !== 'POST' || directDevice) { json(res, 403, { error: '需要浏览器同源配对会话。' }); return }
-      if (!this.rate(req)) { json(res, 429, { error: '请求过于频繁，请稍后再试。' }); return }
+      if (req.method === 'GET') {
+        res.writeHead(204, {
+          'cache-control': 'no-store',
+          'x-dsh-line-preference': this.options.direct.preference?.() ?? 'lan',
+        })
+        res.end()
+        return
+      }
+      if (req.method !== 'POST' || directDevice) {
+        json(res, 403, { error: '需要浏览器同源配对会话。' })
+        return
+      }
+      if (!this.rate(req)) {
+        json(res, 429, { error: '请求过于频繁，请稍后再试。' })
+        return
+      }
       try {
         const input = await body(req)
-        if (input.op !== 'offer') { json(res, 400, { error: '未知的直连操作。' }); return }
+        if (input.op !== 'offer') {
+          json(res, 400, { error: '未知的直连操作。' })
+          return
+        }
         json(res, 200, await this.options.direct.offer(device.id, String(input.sdp ?? '')))
-      } catch (error) { json(res, 400, { error: error instanceof Error ? error.message : '直连协商失败。' }) }
+      } catch (error) {
+        json(res, 400, { error: error instanceof Error ? error.message : '直连协商失败。' })
+      }
       return
     }
     // Renew the browser expiry along with the durable 30-day idle authorization.
-    if (!directDevice && !relayDevice) res.setHeader('set-cookie', this.cookieHeader(cookie(req)!, !!this.lanTls || publicRequest))
-    const untrack = this.track(device.id, () => { req.destroy(); res.destroy() }); res.once('close', untrack)
+    if (!directDevice && !relayDevice)
+      res.setHeader('set-cookie', this.cookieHeader(cookie(req)!, !!this.lanTls || publicRequest))
+    const untrack = this.track(device.id, () => {
+      req.destroy()
+      res.destroy()
+    })
+    res.once('close', untrack)
     if (decodeURIComponent(url.pathname) === MANAGE_PATH) {
-      if (req.method !== 'POST') { json(res, 405, { error: 'POST only' }); return }
-      try { json(res, 200, await this.options.manage(await body(req), false)) }
-      catch (error) { json(res, 400, { error: error instanceof Error ? error.message : '操作失败。' }) }
+      if (req.method !== 'POST') {
+        json(res, 405, { error: 'POST only' })
+        return
+      }
+      try {
+        json(res, 200, await this.options.manage(await body(req), false))
+      } catch (error) {
+        json(res, 400, { error: error instanceof Error ? error.message : '操作失败。' })
+      }
       return
     }
     // A paired device already holds the computer's full authority; serving a local file it
     // points at (a workspace link in a message) is convenience, not a new capability.
     if (url.pathname === '/rc/workspace-file') {
-      if (req.method !== 'GET') { json(res, 405, { error: 'GET only' }); return }
+      if (req.method !== 'GET') {
+        json(res, 405, { error: 'GET only' })
+        return
+      }
       const requested = url.searchParams.get('p') ?? ''
       const cleaned = requested.replace(/^\/+(?=[a-zA-Z]:[\\/])/, '').replace(/\0/g, '')
-      if (!cleaned || !validLocalPath(cleaned)) { json(res, 400, { error: '文件路径不正确。' }); return }
-      if (/\.html?$/i.test(cleaned) || directDevice && /\.svg$/i.test(cleaned) && url.searchParams.get('preview') === '1') {
+      if (!cleaned || !validLocalPath(cleaned)) {
+        json(res, 400, { error: '文件路径不正确。' })
+        return
+      }
+      if (
+        /\.html?$/i.test(cleaned) ||
+        (directDevice && /\.svg$/i.test(cleaned) && url.searchParams.get('preview') === '1')
+      ) {
         try {
           const path = await realpath(cleaned)
-          if (!(await stat(path)).isFile()) { json(res, 404, { error: '请选择普通文件。' }); return }
+          if (!(await stat(path)).isFile()) {
+            json(res, 404, { error: '请选择普通文件。' })
+            return
+          }
           const token = randomBytes(32).toString('base64url')
           this.previews.add(token, device.id, dirname(path))
           const location = PREVIEW_PREFIX + token + '/' + previewEntry(path)
-          res.writeHead(303, { location, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' }); res.end()
-        } catch { json(res, 404, { error: '文件不存在或无法读取，可能已被移动或删除。' }) }
+          res.writeHead(303, { location, 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' })
+          res.end()
+        } catch {
+          json(res, 404, { error: '文件不存在或无法读取，可能已被移动或删除。' })
+        }
         return
       }
       const mime = PREVIEW_MIME[cleaned.split('.').at(-1)?.toLowerCase() ?? ''] ?? 'application/octet-stream'
@@ -415,111 +704,228 @@ export class Gateway {
         const file = await open(cleaned, 'r')
         try {
           const info = await file.stat()
-          if (!info.isFile()) { json(res, 404, { error: '请选择普通文件。' }); return }
-          if (info.size > 48 * 1024 * 1024) { json(res, 413, { error: '文件超过 48 MiB，请在电脑上打开。' }); return }
+          if (!info.isFile()) {
+            json(res, 404, { error: '请选择普通文件。' })
+            return
+          }
+          if (info.size > 48 * 1024 * 1024) {
+            json(res, 413, { error: '文件超过 48 MiB，请在电脑上打开。' })
+            return
+          }
           if (res.destroyed) return
           const stream = file.createReadStream({ autoClose: false })
           stream.on('error', () => res.destroy())
           res.once('close', () => stream.destroy())
-          res.writeHead(200, { 'content-type': mime, 'content-length': info.size, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer', ...(mime === 'image/svg+xml' ? { 'content-security-policy': 'sandbox' } : {}) })
-          await new Promise<void>(resolve => { stream.once('close', resolve); stream.once('end', resolve); stream.pipe(res) })
-        } finally { await file.close() }
-      } catch { json(res, 404, { error: '文件不存在或无法读取，可能已被移动或删除。' }) }
+          res.writeHead(200, {
+            'content-type': mime,
+            'content-length': info.size,
+            'cache-control': 'no-store',
+            'x-content-type-options': 'nosniff',
+            'referrer-policy': 'no-referrer',
+            ...(mime === 'image/svg+xml' ? { 'content-security-policy': 'sandbox' } : {}),
+          })
+          await new Promise<void>((resolve) => {
+            stream.once('close', resolve)
+            stream.once('end', resolve)
+            stream.pipe(res)
+          })
+        } finally {
+          await file.close()
+        }
+      } catch {
+        json(res, 404, { error: '文件不存在或无法读取，可能已被移动或删除。' })
+      }
       return
     }
     if (url.pathname === PREVIEW_WORKER_PATH && this.options.direct && !this.lanTls && !directDevice) {
-      if (req.method !== 'GET' && req.method !== 'HEAD') { json(res, 405, { error: 'GET only' }); return }
-      res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'no-store', 'service-worker-allowed': '/' })
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        json(res, 405, { error: 'GET only' })
+        return
+      }
+      res.writeHead(200, {
+        'content-type': 'text/javascript; charset=utf-8',
+        'cache-control': 'no-store',
+        'service-worker-allowed': '/',
+      })
       res.end(req.method === 'HEAD' ? undefined : previewWorkerScript())
       return
     }
     if (url.pathname === BOOT_PATH) {
-      if (req.method !== 'GET' && req.method !== 'HEAD') { json(res, 405, { error: 'GET only' }); return }
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        json(res, 405, { error: 'GET only' })
+        return
+      }
       // This is a blocking script in the page head, so a phone that already holds this exact
       // build must be able to revalidate it instead of downloading it again on every cold start.
-      const script = this.options.boot(this.bootContext(publicRequest, publicRequest || isLoopback(req.socket.remoteAddress)))
+      const script = this.options.boot(
+        this.bootContext(publicRequest, publicRequest || isLoopback(req.socket.remoteAddress)),
+      )
       const etag = '"' + createHash('sha256').update(script).digest('base64url').slice(0, 22) + '"'
-      if (req.headers['if-none-match'] === etag) { res.writeHead(304, { 'cache-control': 'private, no-cache', etag }); res.end(); return }
-      res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'private, no-cache', etag, 'x-content-type-options': 'nosniff' })
+      if (req.headers['if-none-match'] === etag) {
+        res.writeHead(304, { 'cache-control': 'private, no-cache', etag })
+        res.end()
+        return
+      }
+      res.writeHead(200, {
+        'content-type': 'text/javascript; charset=utf-8',
+        'cache-control': 'private, no-cache',
+        etag,
+        'x-content-type-options': 'nosniff',
+      })
       res.end(req.method === 'HEAD' ? undefined : script)
       return
     }
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
       // `?ui=custom` and `?ui=native` were two phone interfaces in earlier releases; the phone now
       // shows the Host's own page, and a saved link or QR code must not 404 on the way there.
-      if (url.searchParams.has('ui')) { res.writeHead(302, { location: '/', 'cache-control': 'no-store' }); res.end(); return }
+      if (url.searchParams.has('ui')) {
+        res.writeHead(302, { location: '/', 'cache-control': 'no-store' })
+        res.end()
+        return
+      }
       let html: string
-      try { html = injectBoot(await this.options.index()) }
-      catch {
-        res.writeHead(502, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' })
+      try {
+        html = injectBoot(await this.options.index())
+      } catch {
+        res.writeHead(502, {
+          'content-type': 'text/html; charset=utf-8',
+          'cache-control': 'no-store',
+          'referrer-policy': 'no-referrer',
+        })
         res.end(unavailablePage(pageLanguage(req)))
         return
       }
-      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' }); res.end(html); return
+      res.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+        'referrer-policy': 'no-referrer',
+      })
+      res.end(html)
+      return
     }
     this.proxy(req, res, device.id)
   }
   /** The loopback headers for one remote request; shared with the service-node tunnel. */
   private upstreamHeaders(req: IncomingMessage): Record<string, string | string[]> {
-    return upstreamRequestHeaders(req, { upstreamPort: this.options.upstreamPort, cookie: this.options.upstreamCookie() })
+    return upstreamRequestHeaders(req, {
+      upstreamPort: this.options.upstreamPort,
+      cookie: this.options.upstreamCookie(),
+    })
   }
   private proxy(req: IncomingMessage, res: ServerResponse, deviceId: string): void {
     let upstream: ClientRequest
-    upstream = httpRequest({ hostname: '127.0.0.1', port: this.options.upstreamPort, path: req.url, method: req.method, headers: this.upstreamHeaders(req) }, incoming => {
-      const headers = { ...incoming.headers }
-      delete headers['set-cookie']; delete headers['connection']; delete headers['transfer-encoding']
-      if (headers.location) {
-        try { const target = new URL(headers.location, `http://127.0.0.1:${this.options.upstreamPort}`); if (target.host === `127.0.0.1:${this.options.upstreamPort}`) headers.location = target.pathname + target.search } catch { delete headers.location }
-      }
-      const status = incoming.statusCode ?? 502
-      // The Host now answers with ETag and 304, and a 304 must arrive without a body: it tells the
-      // phone to reuse the copy it already has, which was this plugin's gzip variant.
-      // A 304 carries no representation type, so it is always treated as the variant this gateway
-      // would have compressed: the copy the phone kept is that gzip body.
-      const compressible = !headers['content-encoding'] && req.headers.range === undefined && (status === 304 || gzipFor(req, String(headers['content-type'] ?? '')))
-      if (compressible && (status === 304 || req.method === 'HEAD')) headers.vary = 'accept-encoding'
-      if (compressible && status !== 204 && status !== 304 && req.method !== 'HEAD' && headers['content-length'] !== '0') {
-        delete headers['content-length']
-        res.writeHead(status, { ...headers, 'content-encoding': 'gzip', vary: 'accept-encoding' })
-        // Flushed as it goes, so a response the Host writes in pieces still arrives in pieces.
-        const gzip = createGzip({ flush: constants.Z_SYNC_FLUSH })
-        pipeline(incoming, gzip, res, () => {})
-        return
-      }
-      res.writeHead(status, headers)
-      pipeline(incoming, res, () => {})
+    upstream = httpRequest(
+      {
+        hostname: '127.0.0.1',
+        port: this.options.upstreamPort,
+        path: req.url,
+        method: req.method,
+        headers: this.upstreamHeaders(req),
+      },
+      (incoming) => {
+        const headers = { ...incoming.headers }
+        delete headers['set-cookie']
+        delete headers['connection']
+        delete headers['transfer-encoding']
+        if (headers.location) {
+          try {
+            const target = new URL(headers.location, `http://127.0.0.1:${this.options.upstreamPort}`)
+            if (target.host === `127.0.0.1:${this.options.upstreamPort}`)
+              headers.location = target.pathname + target.search
+          } catch {
+            delete headers.location
+          }
+        }
+        const status = incoming.statusCode ?? 502
+        // The Host now answers with ETag and 304, and a 304 must arrive without a body: it tells the
+        // phone to reuse the copy it already has, which was this plugin's gzip variant.
+        // A 304 carries no representation type, so it is always treated as the variant this gateway
+        // would have compressed: the copy the phone kept is that gzip body.
+        const compressible =
+          !headers['content-encoding'] &&
+          req.headers.range === undefined &&
+          (status === 304 || gzipFor(req, String(headers['content-type'] ?? '')))
+        if (compressible && (status === 304 || req.method === 'HEAD')) headers.vary = 'accept-encoding'
+        if (
+          compressible &&
+          status !== 204 &&
+          status !== 304 &&
+          req.method !== 'HEAD' &&
+          headers['content-length'] !== '0'
+        ) {
+          delete headers['content-length']
+          res.writeHead(status, { ...headers, 'content-encoding': 'gzip', vary: 'accept-encoding' })
+          // Flushed as it goes, so a response the Host writes in pieces still arrives in pieces.
+          const gzip = createGzip({ flush: constants.Z_SYNC_FLUSH })
+          pipeline(incoming, gzip, res, () => {})
+          return
+        }
+        res.writeHead(status, headers)
+        pipeline(incoming, res, () => {})
+      },
+    )
+    const untrack = this.track(deviceId, () => upstream.destroy())
+    upstream.once('close', untrack)
+    upstream.on('error', () => {
+      if (!res.headersSent) json(res, 502, { error: 'DSH 宿主连接失败。' })
+      else res.destroy()
     })
-    const untrack = this.track(deviceId, () => upstream.destroy()); upstream.once('close', untrack)
-    upstream.on('error', () => { if (!res.headersSent) json(res, 502, { error: 'DSH 宿主连接失败。' }); else res.destroy() })
     // The idle timer only covers the wait for response headers: a Host that streams a long
     // answer quietly for over two minutes is working, not stuck.
     upstream.setTimeout(120_000, () => upstream.destroy())
     upstream.once('response', () => upstream.setTimeout(0))
-    req.once('aborted', () => upstream.destroy()); res.once('close', () => upstream.destroy())
+    req.once('aborted', () => upstream.destroy())
+    res.once('close', () => upstream.destroy())
     req.pipe(upstream)
   }
   private async upgrade(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
     const device = this.device(req)
-    if (!device || !this.validHost(req) || !this.sameOrigin(req) || !safePath(req.url ?? '/')) { socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return }
+    if (!device || !this.validHost(req) || !this.sameOrigin(req) || !safePath(req.url ?? '/')) {
+      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
+      return
+    }
     const url = new URL(req.url ?? '/', 'http://gateway.invalid')
     if (url.pathname === '/rc/sse') {
       const target = url.searchParams.get('path') ?? ''
-      if (!safePath(target) || target.startsWith('/rc/') || decodeURIComponent(target.split('?')[0]!) === MANAGE_PATH) { socket.end('HTTP/1.1 403 Forbidden\r\n\r\n'); return }
-      this.wss.handleUpgrade(req, socket, head, ws => this.sse(req, ws, target, url.searchParams.get('lastEventId') ?? '', device.id)); return
+      if (!safePath(target) || target.startsWith('/rc/') || decodeURIComponent(target.split('?')[0]!) === MANAGE_PATH) {
+        socket.end('HTTP/1.1 403 Forbidden\r\n\r\n')
+        return
+      }
+      this.wss.handleUpgrade(req, socket, head, (ws) =>
+        this.sse(req, ws, target, url.searchParams.get('lastEventId') ?? '', device.id),
+      )
+      return
     }
     // Only registered Host WS routes are reachable; no port or destination supplied by clients.
-    const headers = this.upstreamHeaders(req); delete headers['sec-websocket-protocol']
-    const protocols = req.headers['sec-websocket-protocol']?.split(',').map(p => p.trim()) ?? []
-    const upstream = new this.ws.WebSocket(`ws://127.0.0.1:${this.options.upstreamPort}${url.pathname}${url.search}`, protocols, { headers, maxPayload: 32 * 1024 * 1024, perMessageDeflate: this.deflate })
-    const release = this.track(device.id, () => { upstream.terminate(); socket.destroy() })
-    socket.once('close', () => { upstream.terminate(); release() })
+    const headers = this.upstreamHeaders(req)
+    delete headers['sec-websocket-protocol']
+    const protocols = req.headers['sec-websocket-protocol']?.split(',').map((p) => p.trim()) ?? []
+    const upstream = new this.ws.WebSocket(
+      `ws://127.0.0.1:${this.options.upstreamPort}${url.pathname}${url.search}`,
+      protocols,
+      { headers, maxPayload: 32 * 1024 * 1024, perMessageDeflate: this.deflate },
+    )
+    const release = this.track(device.id, () => {
+      upstream.terminate()
+      socket.destroy()
+    })
+    socket.once('close', () => {
+      upstream.terminate()
+      release()
+    })
     upstream.on('error', () => socket.destroy())
     upstream.once('open', () => {
-      if (socket.destroyed) { upstream.terminate(); return }
-      this.wss.handleUpgrade(req, socket, head, ws => {
+      if (socket.destroyed) {
+        upstream.terminate()
+        return
+      }
+      this.wss.handleUpgrade(req, socket, head, (ws) => {
         if (url.pathname === '/api/remote.mux') {
           let sessions = this.routes.get(device.id)
-          if (!sessions) this.routes.set(device.id, sessions = new Map())
+          if (!sessions) {
+            sessions = new Map()
+            this.routes.set(device.id, sessions)
+          }
           const activeSessions = sessions
           const route = this.directDevice(req) ? 'direct' : this.publicRequest(req) ? 'public' : 'lan'
           activeSessions.set(ws, route)
@@ -529,53 +935,116 @@ export class Gateway {
           })
         }
         let alive = true
-        const heartbeat = setInterval(() => { if (!alive || !this.device(req)) { ws.terminate(); upstream.terminate(); return }; alive = false; ws.ping() }, 30000)
-        heartbeat.unref(); ws.on('pong', () => { alive = true })
+        const heartbeat = setInterval(() => {
+          if (!alive || !this.device(req)) {
+            ws.terminate()
+            upstream.terminate()
+            return
+          }
+          alive = false
+          ws.ping()
+        }, 30000)
+        heartbeat.unref()
+        ws.on('pong', () => {
+          alive = true
+        })
         const send = (destination: WebSocket, data: Buffer, binary: boolean) => {
-          if (destination.readyState !== OPEN || destination.bufferedAmount > 8 * 1024 * 1024) { ws.terminate(); upstream.terminate(); return }
+          if (destination.readyState !== OPEN || destination.bufferedAmount > 8 * 1024 * 1024) {
+            ws.terminate()
+            upstream.terminate()
+            return
+          }
           destination.send(data, { binary })
         }
         ws.on('message', (data, binary) => send(upstream, data as Buffer, binary))
         upstream.on('message', (data, binary) => send(ws, data as Buffer, binary))
         ws.on('error', () => upstream.terminate())
-        ws.once('close', () => { clearInterval(heartbeat); upstream.terminate(); release() })
+        ws.once('close', () => {
+          clearInterval(heartbeat)
+          upstream.terminate()
+          release()
+        })
         // A close frame the Host sent with no code arrives as 1005, which `ws` refuses to send:
         // the throw happens inside an EventEmitter callback, where nothing can catch it for us.
         upstream.once('close', (code, reason) => {
           if (ws.readyState !== OPEN) return
-          try { ws.close(closeCode(code), reason) } catch { ws.terminate() }
+          try {
+            ws.close(closeCode(code), reason)
+          } catch {
+            ws.terminate()
+          }
         })
       })
     })
   }
   private sse(req: IncomingMessage, ws: WebSocket, path: string, lastId: string, deviceId: string): void {
-    const headers = this.upstreamHeaders(req); headers.accept = 'text/event-stream'
+    const headers = this.upstreamHeaders(req)
+    headers.accept = 'text/event-stream'
     if (lastId && lastId.length < 4096 && !/[\r\n]/.test(lastId)) headers['last-event-id'] = lastId
     const decoder = new StringDecoder('utf8')
-    const upstream = httpRequest({ hostname: '127.0.0.1', port: this.options.upstreamPort, path, headers }, response => {
-      if (response.statusCode !== 200 || !response.headers['content-type']?.includes('text/event-stream')) { ws.send(JSON.stringify({ type: 'error' })); response.destroy(); ws.close(); return }
-      ws.send(JSON.stringify({ type: 'ready' }))
-      response.on('data', chunk => {
-        if (ws.readyState !== OPEN || ws.bufferedAmount > 1024 * 1024) { upstream.destroy(); ws.terminate(); return }
-        ws.send(JSON.stringify({ type: 'chunk', data: decoder.write(chunk) }))
-      })
-      response.once('end', () => { const tail = decoder.end(); if (tail && ws.readyState === OPEN) ws.send(JSON.stringify({ type: 'chunk', data: tail })); ws.close() })
-      response.once('error', () => ws.terminate())
-      ws.once('close', () => response.destroy())
+    const upstream = httpRequest(
+      { hostname: '127.0.0.1', port: this.options.upstreamPort, path, headers },
+      (response) => {
+        if (response.statusCode !== 200 || !response.headers['content-type']?.includes('text/event-stream')) {
+          ws.send(JSON.stringify({ type: 'error' }))
+          response.destroy()
+          ws.close()
+          return
+        }
+        ws.send(JSON.stringify({ type: 'ready' }))
+        response.on('data', (chunk) => {
+          if (ws.readyState !== OPEN || ws.bufferedAmount > 1024 * 1024) {
+            upstream.destroy()
+            ws.terminate()
+            return
+          }
+          ws.send(JSON.stringify({ type: 'chunk', data: decoder.write(chunk) }))
+        })
+        response.once('end', () => {
+          const tail = decoder.end()
+          if (tail && ws.readyState === OPEN) ws.send(JSON.stringify({ type: 'chunk', data: tail }))
+          ws.close()
+        })
+        response.once('error', () => ws.terminate())
+        ws.once('close', () => response.destroy())
+      },
+    )
+    const release = this.track(deviceId, () => {
+      upstream.destroy()
+      ws.terminate()
     })
-    const release = this.track(deviceId, () => { upstream.destroy(); ws.terminate() })
-    let alive = true; ws.on('pong', () => { alive = true })
-    const ping = setInterval(() => { if (!alive || !this.device(req)) { upstream.destroy(); ws.terminate(); return }; alive = false; if (ws.readyState === OPEN) ws.ping() }, 30000); ping.unref()
-    ws.once('close', () => { clearInterval(ping); upstream.destroy(); release() })
-    ws.on('error', () => upstream.destroy()); upstream.on('error', () => ws.close(1011, 'Host unavailable')); upstream.end()
+    let alive = true
+    ws.on('pong', () => {
+      alive = true
+    })
+    const ping = setInterval(() => {
+      if (!alive || !this.device(req)) {
+        upstream.destroy()
+        ws.terminate()
+        return
+      }
+      alive = false
+      if (ws.readyState === OPEN) ws.ping()
+    }, 30000)
+    ping.unref()
+    ws.once('close', () => {
+      clearInterval(ping)
+      upstream.destroy()
+      release()
+    })
+    ws.on('error', () => upstream.destroy())
+    upstream.on('error', () => ws.close(1011, 'Host unavailable'))
+    upstream.end()
   }
   async close(): Promise<void> {
     this.previews.clear()
     for (const id of [...this.active.keys()]) this.revoke(id)
     for (const socket of this.sockets) socket.destroy()
     for (const socket of this.wss?.clients ?? []) socket.terminate()
-    const server = this.server; this.server = undefined
-    if (server) await new Promise<void>(resolve => server.close(() => resolve()))
-    this.port = 0; this.authorities.clear()
+    const server = this.server
+    this.server = undefined
+    if (server) await new Promise<void>((resolve) => server.close(() => resolve()))
+    this.port = 0
+    this.authorities.clear()
   }
 }

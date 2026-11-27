@@ -23,7 +23,6 @@ import {
   TestHost,
   type HostFrame,
   type PairedDevice,
-  type RegisteredHost,
   type TestNode,
 } from './helpers.ts'
 
@@ -38,7 +37,12 @@ function sendResponse(
   options: { status?: number; headers?: TunnelHeaders; body?: string | Buffer },
 ): void {
   host.send({ t: 'http.response', id, status: options.status ?? 200, headers: options.headers ?? {} })
-  const body = options.body === undefined ? Buffer.alloc(0) : Buffer.isBuffer(options.body) ? options.body : Buffer.from(options.body, 'utf8')
+  const body =
+    options.body === undefined
+      ? Buffer.alloc(0)
+      : Buffer.isBuffer(options.body)
+        ? options.body
+        : Buffer.from(options.body, 'utf8')
   for (const slice of splitTunnelPayload(body)) host.send({ t: 'http.chunk', id }, slice)
   host.send({ t: 'http.end', id })
 }
@@ -56,7 +60,7 @@ async function collectBody(host: TestHost, id: string, timeoutMs = 5_000): Promi
   const chunks: Buffer[] = []
   for (;;) {
     const entry = await host.next(
-      frame => (frame.t === 'http.body' || frame.t === 'http.body.end') && frame.id === id,
+      (frame) => (frame.t === 'http.body' || frame.t === 'http.body.end') && frame.id === id,
       timeoutMs,
     )
     if (entry.frame.t === 'http.body.end') break
@@ -75,9 +79,9 @@ function httpGet(port: number, path: string, headers: Record<string, string>): P
   return new Promise((resolve, reject) => {
     const req = httpRequest(
       { host: '127.0.0.1', port, path, headers: { host: `127.0.0.1:${port}`, ...headers } },
-      res => {
+      (res) => {
         const chunks: Buffer[] = []
-        res.on('data', chunk => chunks.push(Buffer.from(chunk)))
+        res.on('data', (chunk) => chunks.push(Buffer.from(chunk)))
         res.on('end', () =>
           resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks).toString('utf8') }),
         )
@@ -122,7 +126,10 @@ test('host registration accepts a 43-character Base64URL device id', async () =>
 
     // Pairing clients still require ULID/UUID device ids.
     const rejected = await api(node.baseUrl, 'POST', '/v1/pairings/claim', {
-      body: { ticket: 'x'.repeat(32), client: { deviceId, name: '手机', platform: 'ios', identityKey: randomIdentityKey() } },
+      body: {
+        ticket: 'x'.repeat(32),
+        client: { deviceId, name: '手机', platform: 'ios', identityKey: randomIdentityKey() },
+      },
     })
     assert.equal(rejected.status, 400)
   } finally {
@@ -220,7 +227,7 @@ test('SSE responses stream to the device before the tunnel request ends', async 
     let body = ''
     let firstChunkSeen = false
     let resolveFirst: () => void = () => undefined
-    const firstChunk = new Promise<void>(resolve => {
+    const firstChunk = new Promise<void>((resolve) => {
       resolveFirst = resolve
     })
     const finished = new Promise<void>((resolve, reject) => {
@@ -231,7 +238,7 @@ test('SSE responses stream to the device before the tunnel request ends', async 
           path: '/api/events',
           headers: { host: `127.0.0.1:${port}`, cookie: paired.cookie, accept: 'text/event-stream' },
         },
-        res => {
+        (res) => {
           status = res.statusCode ?? 0
           headers = res.headers
           res.setEncoding('utf8')
@@ -330,7 +337,9 @@ test('a device cannot reach a different online Host after its paired Host discon
     const response = await api(node.baseUrl, 'GET', '/api/hello', { cookie: paired.cookie })
     assert.equal(response.status, 503)
     assert.equal(response.json.error.code, 'HOST_OFFLINE')
-  } finally { await node.stop() }
+  } finally {
+    await node.stop()
+  }
 })
 
 test('upgraded Host receives the authenticated relay identity and revocation after reconnect', async () => {
@@ -347,7 +356,9 @@ test('upgraded Host receives the authenticated relay identity and revocation aft
     assert.equal((await pending).status, 204)
     host.close()
     await host.waitOffline()
-    const revoke = await api(node.baseUrl, 'DELETE', `/v1/hosts/${paired.hostId}/devices/${paired.client.deviceId}`, { cookie: paired.cookie })
+    const revoke = await api(node.baseUrl, 'DELETE', `/v1/hosts/${paired.hostId}/devices/${paired.client.deviceId}`, {
+      cookie: paired.cookie,
+    })
     assert.equal(revoke.status, 200)
     const reconnected = await TestHost.connect(node, paired.host, true)
     const notice = await reconnected.nextOfType('pair.revoked')
@@ -385,7 +396,7 @@ test('WebSocket upgrades are proxied to the Host and frames echo back', async ()
     const port = nodePort(node)
     const client = new WebSocket(`ws://127.0.0.1:${port}/api/ws`, { headers: { cookie: paired.cookie } })
     const messages: Buffer[] = []
-    client.on('message', data => messages.push(Buffer.from(data as Buffer)))
+    client.on('message', (data) => messages.push(Buffer.from(data as Buffer)))
     client.on('error', () => undefined)
     const opened = await host.nextOfType('ws.open')
     assert.equal(opened.frame.t, 'ws.open')
@@ -399,7 +410,7 @@ test('WebSocket upgrades are proxied to the Host and frames echo back', async ()
     })
 
     client.send(Buffer.from('hello tunnel', 'utf8'))
-    const forwarded = await host.next(frame => frame.t === 'ws.frame')
+    const forwarded = await host.next((frame) => frame.t === 'ws.frame')
     assert.equal(forwarded.frame.t, 'ws.frame')
     const forwardedFrame = forwarded.frame as Extract<TunnelFrame, { t: 'ws.frame' }>
     assert.equal(forwardedFrame.binary, true)
@@ -427,7 +438,9 @@ test('WebSocket fragments and reassembles messages larger than TUNNEL_MESSAGE_MA
     const messages: Array<{ data: Buffer; isBinary: boolean }> = []
     let closeCode: number | undefined
     client.on('message', (data, isBinary) => messages.push({ data: Buffer.from(data as Buffer), isBinary }))
-    client.on('close', code => { closeCode = code })
+    client.on('close', (code) => {
+      closeCode = code
+    })
     client.on('error', () => undefined)
     const opened = await host.nextOfType('ws.open')
     const openFrame = opened.frame as Extract<TunnelFrame, { t: 'ws.open' }>
@@ -442,7 +455,7 @@ test('WebSocket fragments and reassembles messages larger than TUNNEL_MESSAGE_MA
     const receivedFrames: Array<Extract<TunnelFrame, { t: 'ws.frame' }>> = []
     const receivedChunks: Buffer[] = []
     for (;;) {
-      const entry = await host.next(frame => frame.t === 'ws.frame' && frame.id === openFrame.id)
+      const entry = await host.next((frame) => frame.t === 'ws.frame' && frame.id === openFrame.id)
       const frame = entry.frame as Extract<TunnelFrame, { t: 'ws.frame' }>
       receivedFrames.push(frame)
       receivedChunks.push(entry.payload)
@@ -477,7 +490,7 @@ test('WebSocket fragments and reassembles messages larger than TUNNEL_MESSAGE_MA
 
     host.send({ t: 'ws.frame', id: openFrame.id, binary: true, fin: false }, Buffer.from([1]))
     host.send({ t: 'ws.frame', id: openFrame.id, binary: false, fin: true }, Buffer.from([2]))
-    const closedFrame = await host.next(frame => frame.t === 'ws.close' && frame.id === openFrame.id)
+    const closedFrame = await host.next((frame) => frame.t === 'ws.close' && frame.id === openFrame.id)
     assert.equal((closedFrame.frame as Extract<TunnelFrame, { t: 'ws.close' }>).code, 1002)
     const closeDeadline = Date.now() + 5_000
     while (closeCode === undefined) {
@@ -620,7 +633,7 @@ test('a newer tunnel connection replaces the previous one with close code 4001',
 test('the tunnel endpoint rejects an unknown Host credential', async () => {
   const node = await startNode()
   try {
-    const status = await new Promise<number>(resolve => {
+    const status = await new Promise<number>((resolve) => {
       const ws = new WebSocket(`${node.baseUrl.replace(/^http/u, 'ws')}/v1/tunnel`, {
         headers: { authorization: 'Bearer this-is-not-a-real-host-credential' },
       })

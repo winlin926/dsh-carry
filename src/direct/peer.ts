@@ -1,7 +1,15 @@
 import { randomBytes } from 'node:crypto'
 import type { RTCDataChannel, RTCPeerConnection } from 'werift'
 import { DirectBridge, DIRECT_SEND_QUEUE_LIMIT, type DirectStats } from './bridge.js'
-import { DIRECT_PROTOCOL, DIRECT_SIGNAL_TTL_MS, readControl, controlPayload, decodeDirectFrame, encodeDirectFrame } from './protocol.js'
+import {
+  DIRECT_PROTOCOL,
+  DIRECT_SIGNAL_TTL_MS,
+  readControl,
+  controlPayload,
+  decodeDirectFrame,
+  encodeDirectFrame,
+  type DirectFrame,
+} from './protocol.js'
 
 /** What the panel and the acceptance tests read back about one live direct line. */
 export interface DirectChannelState {
@@ -51,23 +59,29 @@ export class DirectHost {
   constructor(private readonly options: DirectHostOptions) {}
 
   private async load(): Promise<typeof import('werift')> {
-    this.loading ??= import('werift').catch(error => { this.loading = undefined; throw new Error('无法加载 WebRTC 依赖：' + describe(error)) })
+    this.loading ??= import('werift').catch((error) => {
+      this.loading = undefined
+      throw new Error('无法加载 WebRTC 依赖：' + describe(error))
+    })
     return this.loading
   }
 
   /** Answer one offer. The caller has already resolved the device from its own cookie. */
   async offer(deviceId: string, sdp: string): Promise<{ sessionId: string; sdp: string }> {
     if (this.closed) throw new Error('直连已关闭。')
-    if (typeof sdp !== 'string' || !sdp.startsWith('v=0') || sdp.length > 256 * 1024) throw new Error('直连的协商描述不合法。')
+    if (typeof sdp !== 'string' || !sdp.startsWith('v=0') || sdp.length > 256 * 1024)
+      throw new Error('直连的协商描述不合法。')
     const { RTCPeerConnection } = await this.load()
-    if (this.closed || this.sessions.size >= 64 || (this.byDevice.get(deviceId)?.size ?? 0) >= 6) throw new Error('直连会话不可用或已达上限。')
+    if (this.closed || this.sessions.size >= 64 || (this.byDevice.get(deviceId)?.size ?? 0) >= 6)
+      throw new Error('直连会话不可用或已达上限。')
     const sessionId = randomBytes(18).toString('base64url')
     const mark = randomBytes(18).toString('base64url')
     const peer = new RTCPeerConnection({ iceServers: [], iceUseDefaultStunServer: false })
     const session: Session = { sessionId, deviceId, mark, createdAt: Date.now(), peer, missed: 0, connected: false }
     this.sessions.set(sessionId, session)
     const device = this.byDevice.get(deviceId) ?? new Set<string>()
-    device.add(sessionId); this.byDevice.set(deviceId, device)
+    device.add(sessionId)
+    this.byDevice.set(deviceId, device)
     this.byMark.set(mark, session)
     session.offerTimer = setTimeout(() => this.drop(sessionId, 'offer-expired'), DIRECT_SIGNAL_TTL_MS)
     session.offerTimer.unref()
@@ -82,16 +96,23 @@ export class DirectHost {
         session.disconnectedTimer = undefined
         return
       }
-      if (state === 'failed' || state === 'closed') { this.drop(sessionId, 'peer-' + state); return }
+      if (state === 'failed' || state === 'closed') {
+        this.drop(sessionId, 'peer-' + state)
+        return
+      }
       if (state === 'disconnected' && !session.disconnectedTimer) {
-        session.disconnectedTimer = setTimeout(() => { session.disconnectedTimer = undefined; this.drop(sessionId, 'peer-disconnected') }, 10_000)
+        session.disconnectedTimer = setTimeout(() => {
+          session.disconnectedTimer = undefined
+          this.drop(sessionId, 'peer-disconnected')
+        }, 10_000)
       }
     })
     try {
       await peer.setRemoteDescription({ type: 'offer', sdp })
       const answer = await peer.createAnswer()
       await peer.setLocalDescription(answer)
-      for (let step = 0; step < 30 && peer.iceGatheringState !== 'complete'; step++) await new Promise(resolve => setTimeout(resolve, 100))
+      for (let step = 0; step < 30 && peer.iceGatheringState !== 'complete'; step++)
+        await new Promise((resolve) => setTimeout(resolve, 100))
       const local = peer.localDescription?.sdp
       if (!local || this.sessions.get(sessionId) !== session) throw new Error('WebRTC 未生成有效应答。')
       return { sessionId, sdp: local }
@@ -102,21 +123,48 @@ export class DirectHost {
   }
 
   private bindChannel(session: Session, channel: RTCDataChannel): void {
-    if (this.closed || this.sessions.get(session.sessionId) !== session || session.channel || channel.label !== 'rc-direct') { try { channel.close() } catch { /* already gone */ } return }
+    if (
+      this.closed ||
+      this.sessions.get(session.sessionId) !== session ||
+      session.channel ||
+      channel.label !== 'rc-direct'
+    ) {
+      try {
+        channel.close()
+      } catch {
+        /* already gone */
+      }
+      return
+    }
     this.options.log?.('直连通道已建立')
     session.channel = channel
     const bridge = new DirectBridge({ port: this.options.port, mark: () => session.mark, log: this.options.log })
     const handle = bridge.attach({
-      get bufferedAmount() { return channel.bufferedAmount },
+      get bufferedAmount() {
+        return channel.bufferedAmount
+      },
       onBufferedAmountLow: (threshold, listener) => {
         channel.bufferedAmountLowThreshold = threshold
         return channel.bufferedAmountLow.subscribe(listener).unSubscribe
       },
       send: (data: Uint8Array) => {
-        if (channel.bufferedAmount + data.byteLength > DIRECT_SEND_QUEUE_LIMIT) { this.drop(session.sessionId, 'send-queue-full'); return }
-        try { channel.send(data) } catch { this.drop(session.sessionId, 'send-failed') }
+        if (channel.bufferedAmount + data.byteLength > DIRECT_SEND_QUEUE_LIMIT) {
+          this.drop(session.sessionId, 'send-queue-full')
+          return
+        }
+        try {
+          channel.send(data)
+        } catch {
+          this.drop(session.sessionId, 'send-failed')
+        }
       },
-      close: () => { try { channel.close() } catch { /* already gone */ } },
+      close: () => {
+        try {
+          channel.close()
+        } catch {
+          /* already gone */
+        }
+      },
     })
     session.bridge = bridge
     session.handle = handle
@@ -124,32 +172,64 @@ export class DirectHost {
       const bytes = toBytes(message)
       if (!bytes) return
       // The first frame binds the channel: it names the session the answer was issued for.
-      let frame
-      try { frame = decodeDirectFrame(bytes) } catch { this.drop(session.sessionId, 'bad-frame'); return }
+      let frame: DirectFrame
+      try {
+        frame = decodeDirectFrame(bytes)
+      } catch {
+        this.drop(session.sessionId, 'bad-frame')
+        return
+      }
       if (!session.connected) {
-        if (frame.t !== 'hello') { this.drop(session.sessionId, 'hello-required'); return }
+        if (frame.t !== 'hello') {
+          this.drop(session.sessionId, 'hello-required')
+          return
+        }
         const hello = readControl(frame)
-        if (hello.sessionId !== session.sessionId || hello.protocol !== DIRECT_PROTOCOL) { this.drop(session.sessionId, 'hello-mismatch'); return }
+        if (hello.sessionId !== session.sessionId || hello.protocol !== DIRECT_PROTOCOL) {
+          this.drop(session.sessionId, 'hello-mismatch')
+          return
+        }
         session.connected = true
         if (session.offerTimer) clearTimeout(session.offerTimer)
-        try { channel.send(encodeDirectFrame({ t: 'hello', id: 'hello', payload: controlPayload({ protocol: DIRECT_PROTOCOL, sessionId: session.sessionId }) })) } catch { /* the frame is advisory */ }
+        try {
+          channel.send(
+            encodeDirectFrame({
+              t: 'hello',
+              id: 'hello',
+              payload: controlPayload({ protocol: DIRECT_PROTOCOL, sessionId: session.sessionId }),
+            }),
+          )
+        } catch {
+          /* the frame is advisory */
+        }
         this.startKeepAlive(session)
         return
       }
-      if (frame.t === 'pong' && frame.id === 'ka') { session.missed = 0; return }
+      if (frame.t === 'pong' && frame.id === 'ka') {
+        session.missed = 0
+        return
+      }
       handle.handle(bytes)
     })
-    channel.stateChanged?.subscribe?.((state: string) => { if (state === 'closed') this.drop(session.sessionId, 'channel-closed') })
+    channel.stateChanged?.subscribe?.((state: string) => {
+      if (state === 'closed') this.drop(session.sessionId, 'channel-closed')
+    })
     channel.onClose?.subscribe?.(() => this.drop(session.sessionId, 'channel-closed'))
   }
 
   private startKeepAlive(session: Session): void {
     const period = this.options.keepAliveMs ?? 10_000
     session.timer = setInterval(() => {
-      if (session.missed >= 2) { this.drop(session.sessionId, 'idle'); return }
+      if (session.missed >= 2) {
+        this.drop(session.sessionId, 'idle')
+        return
+      }
       session.missed += 1
-      try { session.channel?.send(encodeDirectFrame({ t: 'ping', id: 'ka', payload: controlPayload({ at: Date.now() }) })) }
-      catch { this.drop(session.sessionId, 'ping-failed') }
+      try {
+        session.channel?.send(encodeDirectFrame({ t: 'ping', id: 'ka', payload: controlPayload({ at: Date.now() }) }))
+      } catch {
+        this.drop(session.sessionId, 'ping-failed')
+      }
     }, period)
     session.timer.unref?.()
   }
@@ -161,7 +241,7 @@ export class DirectHost {
   }
 
   state(): DirectChannelState[] {
-    return [...this.sessions.values()].map(session => ({
+    return [...this.sessions.values()].map((session) => ({
       sessionId: session.sessionId,
       deviceId: session.deviceId,
       connected: session.connected,
@@ -172,7 +252,7 @@ export class DirectHost {
 
   /** The device was revoked, or the user asked the line to stop: every channel for it ends now. */
   closeDevice(deviceId: string): void {
-    for (const sessionId of [...this.byDevice.get(deviceId) ?? []]) this.drop(sessionId, 'revoked')
+    for (const sessionId of [...(this.byDevice.get(deviceId) ?? [])]) this.drop(sessionId, 'revoked')
     this.byDevice.delete(deviceId)
   }
 
@@ -182,13 +262,24 @@ export class DirectHost {
     this.sessions.delete(sessionId)
     this.byMark.delete(session.mark)
     const device = this.byDevice.get(session.deviceId)
-    if (device) { device.delete(sessionId); if (!device.size) this.byDevice.delete(session.deviceId) }
+    if (device) {
+      device.delete(sessionId)
+      if (!device.size) this.byDevice.delete(session.deviceId)
+    }
     if (session.timer) clearInterval(session.timer)
     if (session.offerTimer) clearTimeout(session.offerTimer)
     if (session.disconnectedTimer) clearTimeout(session.disconnectedTimer)
     session.handle?.dispose()
-    try { session.channel?.close() } catch { /* already gone */ }
-    try { void Promise.resolve(session.peer.close()).catch(() => {}) } catch { /* already gone */ }
+    try {
+      session.channel?.close()
+    } catch {
+      /* already gone */
+    }
+    try {
+      void Promise.resolve(session.peer.close()).catch(() => {})
+    } catch {
+      /* already gone */
+    }
     this.options.log?.('直连已结束 ' + reason)
   }
 
@@ -201,7 +292,7 @@ export class DirectHost {
 function toBytes(message: unknown): Uint8Array | undefined {
   if (message instanceof Uint8Array) return message
   if (Buffer.isBuffer(message)) return new Uint8Array(message)
-  if (Array.isArray(message)) return new Uint8Array(Buffer.concat(message.map(item => Buffer.from(item))))
+  if (Array.isArray(message)) return new Uint8Array(Buffer.concat(message.map((item) => Buffer.from(item))))
   if (message instanceof ArrayBuffer) return new Uint8Array(message)
   return undefined
 }

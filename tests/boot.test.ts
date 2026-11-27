@@ -4,7 +4,8 @@ import { BOOT_PATH, bootScript, injectBoot, type BootContext } from '../src/boot
 import { localFilePath } from '../src/local-file.js'
 import type { ConnectionFace, RemoteRuntime } from '../src/remote-runtime.js'
 
-const page = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>DeepSeek Harness</title></head><body><div id="root"></div></body></html>'
+const page =
+  '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>DeepSeek Harness</title></head><body><div id="root"></div></body></html>'
 
 it('loads the same-origin boot script only after the viewport meta', () => {
   const html = injectBoot(page)
@@ -15,12 +16,18 @@ it('loads the same-origin boot script only after the viewport meta', () => {
   expect(script).toBeGreaterThan(viewport)
   expect(title).toBeGreaterThan(script)
   expect(html).not.toContain(`<script>${bootScript()}`)
-  expect(injectBoot('<head><title>x</title></head>')).toMatch(/^<head><meta name="viewport" content="width=device-width, initial-scale=1"><script src="\/rc\/boot\.js"><\/script>/)
+  expect(injectBoot('<head><title>x</title></head>')).toMatch(
+    /^<head><meta name="viewport" content="width=device-width, initial-scale=1"><script src="\/rc\/boot\.js"><\/script>/,
+  )
 })
 
 it('installs the transport ahead of Host head injections without changing their order', () => {
-  const html = injectBoot('<head><script>queue()</script><link rel="preload" as="script" href="plugins/batch"><script src="plugins/bootstrap"></script><meta name="viewport" content="width=device-width,interactive-widget=resizes-content"><script type="module" src="app.js"></script></head>')
-  expect(html).toMatch(/^<head><meta name="viewport" content="width=device-width,interactive-widget=resizes-content"><script src="\/rc\/boot\.js"><\/script><script>queue\(\)<\/script>/)
+  const html = injectBoot(
+    '<head><script>queue()</script><link rel="preload" as="script" href="plugins/batch"><script src="plugins/bootstrap"></script><meta name="viewport" content="width=device-width,interactive-widget=resizes-content"><script type="module" src="app.js"></script></head>',
+  )
+  expect(html).toMatch(
+    /^<head><meta name="viewport" content="width=device-width,interactive-widget=resizes-content"><script src="\/rc\/boot\.js"><\/script><script>queue\(\)<\/script>/,
+  )
   expect(html.match(/name="viewport"/g)).toHaveLength(1)
   expect(html.indexOf('queue()')).toBeLessThan(html.indexOf('plugins/batch'))
   expect(html.indexOf('plugins/batch')).toBeLessThan(html.indexOf('plugins/bootstrap'))
@@ -53,38 +60,100 @@ class StandInSocket {
   onerror: (() => void) | null = null
   onclose: (() => void) | null = null
   private readonly listeners = new Map<string, Array<(event: Event) => void>>()
-  constructor(readonly url: unknown, readonly protocols?: unknown) { StandInSocket.all.push(this) }
-  addEventListener(type: string, listener: (event: Event) => void): void { this.listeners.set(type, [...this.listeners.get(type) ?? [], listener]) }
-  fire(type: string): void { for (const listener of this.listeners.get(type) ?? []) listener(new Event(type)) }
+  constructor(
+    readonly url: unknown,
+    readonly protocols?: unknown,
+  ) {
+    StandInSocket.all.push(this)
+  }
+  addEventListener(type: string, listener: (event: Event) => void): void {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener])
+  }
+  fire(type: string): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(new Event(type))
+  }
 }
 class StandInElement {
-  id = ''; type = ''; src = ''; href = ''; async = false; disabled = false; focused = false; className = ''
+  id = ''
+  type = ''
+  src = ''
+  href = ''
+  async = false
+  disabled = false
+  focused = false
+  className = ''
   style: Record<string, any> = {}
   attributes: Record<string, string> = {}
-  dataset = new Proxy<Record<string, string>>({}, { set: (_target, key, value) => { this.attributes['data-' + String(key).replace(/[A-Z]/g, letter => '-' + letter.toLowerCase())] = value; return true } })
+  dataset = new Proxy<Record<string, string>>(
+    {},
+    {
+      set: (_target, key, value) => {
+        this.attributes['data-' + String(key).replace(/[A-Z]/g, (letter) => '-' + letter.toLowerCase())] = value
+        return true
+      },
+    },
+  )
   parentElement: StandInElement | null = null
   children: StandInElement[] = []
   onclick?: () => void
   private text = ''
   private listeners = new Map<string, Array<() => void>>()
   constructor(readonly tagName: string) {}
-  get firstElementChild(): StandInElement | null { return this.children[0] ?? null }
-  get childElementCount(): number { return this.children.length }
-  get textContent(): string { return this.text + this.children.map(child => child.textContent).join('') }
-  set textContent(value: string) { this.text = value; this.replaceChildren() }
-  setAttribute(name: string, value: string): void { this.attributes[name] = value }
-  append(...nodes: StandInElement[]): void { for (const node of nodes) { node.remove(); node.parentElement = this; this.children.push(node) } }
-  replaceChildren(...nodes: StandInElement[]): void { for (const child of this.children) child.parentElement = null; this.children = []; this.append(...nodes) }
-  remove(): void { if (this.parentElement) { this.parentElement.children = this.parentElement.children.filter(child => child !== this); this.parentElement = null } }
-  focus(): void { this.focused = true }
-  showModal(): void { this.setAttribute('open', '') }
-  addEventListener(type: string, listener: () => void): void { this.listeners.set(type, [...this.listeners.get(type) ?? [], listener]) }
-  fire(type: string): void { for (const listener of this.listeners.get(type) ?? []) listener() }
+  get firstElementChild(): StandInElement | null {
+    return this.children[0] ?? null
+  }
+  get childElementCount(): number {
+    return this.children.length
+  }
+  get textContent(): string {
+    return this.text + this.children.map((child) => child.textContent).join('')
+  }
+  set textContent(value: string) {
+    this.text = value
+    this.replaceChildren()
+  }
+  setAttribute(name: string, value: string): void {
+    this.attributes[name] = value
+  }
+  append(...nodes: StandInElement[]): void {
+    for (const node of nodes) {
+      node.remove()
+      node.parentElement = this
+      this.children.push(node)
+    }
+  }
+  replaceChildren(...nodes: StandInElement[]): void {
+    for (const child of this.children) child.parentElement = null
+    this.children = []
+    this.append(...nodes)
+  }
+  remove(): void {
+    if (this.parentElement) {
+      this.parentElement.children = this.parentElement.children.filter((child) => child !== this)
+      this.parentElement = null
+    }
+  }
+  focus(): void {
+    this.focused = true
+  }
+  showModal(): void {
+    this.setAttribute('open', '')
+  }
+  addEventListener(type: string, listener: () => void): void {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener])
+  }
+  fire(type: string): void {
+    for (const listener of this.listeners.get(type) ?? []) listener()
+  }
   querySelector(selector: string): StandInElement | null {
-    const direct = selector.startsWith(':scope > '), attribute = selector.match(/\[([^\]]+)\]/)?.[1]
+    const direct = selector.startsWith(':scope > '),
+      attribute = selector.match(/\[([^\]]+)\]/)?.[1]
     for (const child of this.children) {
       if (attribute && attribute in child.attributes) return child
-      if (!direct) { const match = child.querySelector(selector); if (match) return match }
+      if (!direct) {
+        const match = child.querySelector(selector)
+        if (match) return match
+      }
     }
     return null
   }
@@ -92,21 +161,27 @@ class StandInElement {
 /** One boot graph as the Host composes it: a revision, ordered rows and the initial combos carrying them. */
 const bootGraph = (rev: string, ids: string[], batches?: Array<{ phase: string; url: string; entries: string[] }>) => ({
   rev,
-  entries: ids.map(id => ({ id, url: '/plugins/??' + id + '/client.js&rev=' + rev, rev })),
-  batches: (batches ?? [{ phase: 'bootstrap', url: '/plugins/??' + ids.join('/client.js,') + '/client.js&rev=' + rev, entries: ids }])
-    .map(batch => ({ ...batch, rev })),
+  entries: ids.map((id) => ({ id, url: '/plugins/??' + id + '/client.js&rev=' + rev, rev })),
+  batches: (
+    batches ?? [
+      { phase: 'bootstrap', url: '/plugins/??' + ids.join('/client.js,') + '/client.js&rev=' + rev, entries: ids },
+    ]
+  ).map((batch) => ({ ...batch, rev })),
 })
 /** The Host's HTML facade: a pending queue before create(), the live sink the module system installs. */
 function hostFacade() {
-  const live: StandInElement[] = []
   const registrations: Array<{ id: string; chunk?: string }> = []
   const facade: Record<string, any> = {
     mode: 'queue',
     pendingQueue: [] as Array<{ id: string; chunk?: string }>,
-    load(registration: { id: string; chunk?: string }) { facade.pendingQueue.push(registration) },
+    load(registration: { id: string; chunk?: string }) {
+      facade.pendingQueue.push(registration)
+    },
     create(options: unknown) {
       facade.mode = 'live'
-      facade.load = (registration: { id: string; chunk?: string }) => { registrations.push(registration) }
+      facade.load = (registration: { id: string; chunk?: string }) => {
+        registrations.push(registration)
+      }
       for (const registration of facade.pendingQueue.splice(0)) facade.load(registration)
       return { options, live: registrations }
     },
@@ -116,7 +191,18 @@ function hostFacade() {
 function bootPage(
   crypto: Record<string, unknown> = { getRandomValues: (array: Uint8Array) => array },
   transport: Record<string, unknown> = {},
-  session: { context?: BootContext; search?: string; href?: string; boot?: unknown; loader?: unknown; store?: unknown; deferPaint?: boolean; reducedMotion?: boolean; link?: object; language?: string } = {},
+  session: {
+    context?: BootContext
+    search?: string
+    href?: string
+    boot?: unknown
+    loader?: unknown
+    store?: unknown
+    deferPaint?: boolean
+    reducedMotion?: boolean
+    link?: object
+    language?: string
+  } = {},
 ) {
   StandInSocket.all = []
   const requests: Array<{ url: string; body?: string; method?: string; signal?: AbortSignal | null }> = []
@@ -125,18 +211,47 @@ function bootPage(
   const frames: Array<() => void> = []
   const timers: Array<{ delay: number; due: number; run: () => void; cancelled: boolean }> = []
   const listeners = new Map<string, Array<(event: unknown) => void>>()
-  const fire = (type: string, event: unknown) => { for (const listener of listeners.get(type) ?? []) listener(event) }
+  const fire = (type: string, event: unknown) => {
+    for (const listener of listeners.get(type) ?? []) listener(event)
+  }
   const replacements: string[] = []
   const historyReplacements: string[] = []
-  const NativeEventSource = class { constructor(readonly url: string, readonly init?: EventSourceInit) {} }
+  const NativeEventSource = class {
+    constructor(
+      readonly url: string,
+      readonly init?: EventSourceInit,
+    ) {}
+  }
   const window: Record<string, any> = {
-    fetch: (input: unknown, init?: { body?: string; method?: string; signal?: AbortSignal | null }) => { requests.push({ url: String(input), body: init?.body, method: init?.method, signal: init?.signal }); return new Promise<Response>((resolve, reject) => waiting.push({ resolve, reject })) },
-    addEventListener: (type: string, listener: (event: unknown) => void) => { listeners.set(type, [...listeners.get(type) ?? [], listener]) },
-    dispatchEvent: (event: Event) => { fire(event.type, event); return true }, WebSocket: StandInSocket, EventSource: NativeEventSource, __DSH_TRANSPORT__: transport,
-    __DSH_BOOT__: session.boot, __ModuleLoader__: session.loader, localStorage: session.store,
-    matchMedia: (query: string) => ({ matches: query === '(prefers-reduced-motion: reduce)' && !!session.reducedMotion }),
-    requestAnimationFrame: (run: () => void) => { if (session.deferPaint) frames.push(run); else run() },
-    history: { replaceState: (_state: unknown, _title: string, url: string) => { historyReplacements.push(url) } },
+    fetch: (input: unknown, init?: { body?: string; method?: string; signal?: AbortSignal | null }) => {
+      requests.push({ url: String(input), body: init?.body, method: init?.method, signal: init?.signal })
+      return new Promise<Response>((resolve, reject) => waiting.push({ resolve, reject }))
+    },
+    addEventListener: (type: string, listener: (event: unknown) => void) => {
+      listeners.set(type, [...(listeners.get(type) ?? []), listener])
+    },
+    dispatchEvent: (event: Event) => {
+      fire(event.type, event)
+      return true
+    },
+    WebSocket: StandInSocket,
+    EventSource: NativeEventSource,
+    __DSH_TRANSPORT__: transport,
+    __DSH_BOOT__: session.boot,
+    __ModuleLoader__: session.loader,
+    localStorage: session.store,
+    matchMedia: (query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)' && !!session.reducedMotion,
+    }),
+    requestAnimationFrame: (run: () => void) => {
+      if (session.deferPaint) frames.push(run)
+      else run()
+    },
+    history: {
+      replaceState: (_state: unknown, _title: string, url: string) => {
+        historyReplacements.push(url)
+      },
+    },
   }
   const elements: StandInElement[] = []
   const createElement = (tag: string): StandInElement => {
@@ -144,55 +259,152 @@ function bootPage(
     elements.push(node)
     return node
   }
-  const root = createElement('div'); root.id = 'root'
+  const root = createElement('div')
+  root.id = 'root'
   const network = new EventTarget()
-  const document = { documentElement: createElement('html'), head: createElement('head'), hidden: false, addEventListener: window.addEventListener, getElementById: (id: string) => elements.find(node => node.id === id && node.parentElement) ?? null, createElement, body: createElement('body') }
+  const document = {
+    documentElement: createElement('html'),
+    head: createElement('head'),
+    hidden: false,
+    addEventListener: window.addEventListener,
+    getElementById: (id: string) => elements.find((node) => node.id === id && node.parentElement) ?? null,
+    createElement,
+    body: createElement('body'),
+  }
   document.documentElement.append(document.head, document.body)
   document.body.append(root)
   let mutation: (() => void) | undefined
-  const MutationObserver = class { constructor(listener: () => void) { mutation = listener } observe() {} disconnect() { mutation = undefined } }
+  const MutationObserver = class {
+    constructor(listener: () => void) {
+      mutation = listener
+    }
+    observe() {}
+    disconnect() {
+      mutation = undefined
+    }
+  }
   let reloads = 0
-  const location = { href: session.href ?? 'https://rc.example/app?token=page-secret#credential', search: session.search ?? '?token=page-secret', origin: 'https://rc.example', host: 'rc.example', protocol: 'https:', assign: () => {}, reload: () => { reloads++ }, replace: (href: string) => { replacements.push(href) } }
+  const location = {
+    href: session.href ?? 'https://rc.example/app?token=page-secret#credential',
+    search: session.search ?? '?token=page-secret',
+    origin: 'https://rc.example',
+    host: 'rc.example',
+    protocol: 'https:',
+    assign: () => {},
+    reload: () => {
+      reloads++
+    },
+    replace: (href: string) => {
+      replacements.push(href)
+    },
+  }
   const browser = { userAgent: 'test browser', connection: network, language: session.language, onLine: true }
   const script = bootScript(session.context)
-  new Function('window', 'document', 'location', 'crypto', 'setTimeout', 'clearTimeout', 'MutationObserver', 'navigator', 'innerWidth', 'innerHeight', 'devicePixelRatio', 'performance', 'testLink', session.link ? script.replace(remoteDirect.toString(), '(() => testLink)') : script)(
-    window, document, location, crypto,
-    (run: () => void, delay: number) => { timers.push({ delay, due: clock.now + delay, run, cancelled: false }); return timers.length },
-    (id: number) => { if (timers[id - 1]) timers[id - 1]!.cancelled = true },
-    MutationObserver, browser, 390, 844, 1, { now: () => clock.now }, session.link,
+  new Function(
+    'window',
+    'document',
+    'location',
+    'crypto',
+    'setTimeout',
+    'clearTimeout',
+    'MutationObserver',
+    'navigator',
+    'innerWidth',
+    'innerHeight',
+    'devicePixelRatio',
+    'performance',
+    'testLink',
+    session.link ? script.replace(remoteDirect.toString(), '(() => testLink)') : script,
+  )(
+    window,
+    document,
+    location,
+    crypto,
+    (run: () => void, delay: number) => {
+      timers.push({ delay, due: clock.now + delay, run, cancelled: false })
+      return timers.length
+    },
+    (id: number) => {
+      if (timers[id - 1]) timers[id - 1]!.cancelled = true
+    },
+    MutationObserver,
+    browser,
+    390,
+    844,
+    1,
+    { now: () => clock.now },
+    session.link,
   )
   /** Run every timer that is due, in order, including the ones a run schedules. */
   const advance = (ms: number): void => {
     clock.now += ms
     for (;;) {
-      const due = timers.filter(timer => !timer.cancelled && timer.due <= clock.now).sort((left, right) => left.due - right.due)[0]
+      const due = timers
+        .filter((timer) => !timer.cancelled && timer.due <= clock.now)
+        .sort((left, right) => left.due - right.due)[0]
       if (!due) return
       due.cancelled = true
       due.run()
     }
   }
   const mountBoot = () => {
-    const boot = createElement('div'); boot.dataset.dshBoot = ''
-    const card = createElement('div'), spinner = createElement('div'), hint = createElement('p')
-    spinner.dataset.dshBootSpinner = ''; hint.textContent = 'Loading plugins…'
-    card.append(spinner, hint); boot.append(card); root.replaceChildren(boot); mutation?.()
+    const boot = createElement('div')
+    boot.dataset.dshBoot = ''
+    const card = createElement('div'),
+      spinner = createElement('div'),
+      hint = createElement('p')
+    spinner.dataset.dshBootSpinner = ''
+    hint.textContent = 'Loading plugins…'
+    card.append(spinner, hint)
+    boot.append(card)
+    root.replaceChildren(boot)
+    mutation?.()
     return { boot, spinner, card }
   }
-  const stored = session.store as { getItem?: (key: string) => string | null; setItem?: (key: string, value: string) => void } | undefined
+  const stored = session.store as
+    | { getItem?: (key: string) => string | null; setItem?: (key: string, value: string) => void }
+    | undefined
   return {
-    window, NativeEventSource, requests, timers, sockets: StandInSocket.all, document, browser, network, root, createElement, mountBoot, advance, clock,
-    mutate: () => { mutation?.() }, frame: () => frames.splice(0).forEach(run => run()), reloads: () => reloads, replacements, historyReplacements,
+    window,
+    NativeEventSource,
+    requests,
+    timers,
+    sockets: StandInSocket.all,
+    document,
+    browser,
+    network,
+    root,
+    createElement,
+    mountBoot,
+    advance,
+    clock,
+    mutate: () => {
+      mutation?.()
+    },
+    frame: () =>
+      frames.splice(0).forEach((run) => {
+        run()
+      }),
+    reloads: () => reloads,
+    replacements,
+    historyReplacements,
     store: stored,
     fire,
     rejectRequest: () => waiting.shift()?.reject(new TypeError('Network unavailable')),
-    report: () => { advance(8000); return JSON.parse(requests.filter(request => request.url === '/rc/boot-report').at(-1)!.body!) },
-    answer: () => waiting.shift()?.resolve(new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })),
-    answerWith: (status: number, body: string) => waiting.shift()?.resolve(new Response(body, { status, headers: { 'content-type': 'application/json' } })),
+    report: () => {
+      advance(8000)
+      return JSON.parse(requests.filter((request) => request.url === '/rc/boot-report').at(-1)!.body!)
+    },
+    answer: () =>
+      waiting.shift()?.resolve(new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } })),
+    answerWith: (status: number, body: string) =>
+      waiting.shift()?.resolve(new Response(body, { status, headers: { 'content-type': 'application/json' } })),
     elements,
   }
 }
 /** The startup scene lives beside #root, so it survives the renderer replacement. */
-const screenOf = (f: ReturnType<typeof bootPage>): StandInElement | undefined => f.document.body.children.find(node => node.id === 'dsh-rc-boot-screen')
+const screenOf = (f: ReturnType<typeof bootPage>): StandInElement | undefined =>
+  f.document.body.children.find((node) => node.id === 'dsh-rc-boot-screen')
 const byClass = (node: StandInElement | undefined, name: string): StandInElement | undefined => {
   if (!node) return undefined
   for (const child of node.children) {
@@ -213,7 +425,9 @@ const lines = (f: ReturnType<typeof bootPage>) => {
 }
 const storage = (map: Map<string, string>) => ({
   getItem: (key: string) => map.get(key) ?? null,
-  setItem: (key: string, value: string) => { map.set(key, value) },
+  setItem: (key: string, value: string) => {
+    map.set(key, value)
+  },
 })
 
 it('shows the full-screen startup scene outside the root and leaves pointer input unblocked', () => {
@@ -222,7 +436,7 @@ it('shows the full-screen startup scene outside the root and leaves pointer inpu
   expect(lines(f).stage).toBe('正在检查插件变化…')
   expect(lines(f).detail).toBe('正在读取插件清单…')
   expect(screenOf(f)!.id).toBe('dsh-rc-boot-screen')
-  const style = f.document.head.children.find(node => node.id === 'dsh-rc-boot-style')!.textContent
+  const style = f.document.head.children.find((node) => node.id === 'dsh-rc-boot-style')!.textContent
   expect(style).toContain('position:fixed;inset:0')
   expect(style).toContain('background:Canvas;color:CanvasText')
   expect(style).toContain("mask:url('/favicon.svg')")
@@ -251,7 +465,8 @@ it('switches boot-only themes, restores the device preference, and removes contr
   system!.onclick!()
   expect(screen.attributes['data-theme']).toBe('system')
   f.mountBoot()
-  f.root.replaceChildren(f.createElement('main')); f.mutate()
+  f.root.replaceChildren(f.createElement('main'))
+  f.mutate()
   expect(byClass(screen, 'theme')).toBeUndefined()
 })
 
@@ -261,13 +476,19 @@ it('states the stage without a count when the Host published no graph, and keeps
   expect(lines(f).stage).toBe('无法核对插件变化')
   expect(lines(f).count).toBe('')
   const { spinner, card } = f.mountBoot()
-  spinner.remove(); card.textContent = 'Failed to load plugins'; f.mutate()
+  spinner.remove()
+  card.textContent = 'Failed to load plugins'
+  f.mutate()
   expect(screenOf(f)).toBeUndefined()
   const status = f.root.querySelector('[data-dsh-rc-boot-status]')!
   expect(status.attributes.role).toBe('alert')
   expect(status.textContent).toContain('启动失败')
-  expect(status.children.find(child => child.tagName === 'BUTTON')).toBeTruthy()
-  expect(f.report()).toMatchObject({ phase: 'failed', result: 'failed', errors: expect.arrayContaining(['official-startup-failure']) })
+  expect(status.children.find((child) => child.tagName === 'BUTTON')).toBeTruthy()
+  expect(f.report()).toMatchObject({
+    phase: 'failed',
+    result: 'failed',
+    errors: expect.arrayContaining(['official-startup-failure']),
+  })
 })
 
 it('counts the parser batch the HTML facade queued before the graph row arrived', async () => {
@@ -289,15 +510,20 @@ it('counts the parser batch the HTML facade queued before the graph row arrived'
   const loading = f.window.__DSH_TRANSPORT__.loadBundle('/plugins/??one/client.js&rev=r1')
   f.advance(80)
   expect(lines(f).count).toBe('2 / 3 个模块')
-  expect(byClass(screenOf(f), 'fill')!.style.width).toBe(2 / 3 * 100 + '%')
+  expect(byClass(screenOf(f), 'fill')!.style.width).toBe((2 / 3) * 100 + '%')
   createElementScript(f).fire('load')
   await loading
 })
 
 it('counts every entry of one combo once and never a package-local chunk', async () => {
   const { facade } = hostFacade()
-  const graph = bootGraph('r1', ['one', 'two'], [{ phase: 'application', url: '/plugins/??one/client.js,two/client.js&rev=r1', entries: ['one', 'two'] }])
-  const f = bootPage(undefined, {}, { boot: graph, loader: facade }); f.mountBoot()
+  const graph = bootGraph(
+    'r1',
+    ['one', 'two'],
+    [{ phase: 'application', url: '/plugins/??one/client.js,two/client.js&rev=r1', entries: ['one', 'two'] }],
+  )
+  const f = bootPage(undefined, {}, { boot: graph, loader: facade })
+  f.mountBoot()
   facade.create({ boot: graph })
   const loading = f.window.__DSH_TRANSPORT__.loadBundle('/plugins/??one/client.js,two/client.js&rev=r1')
   f.advance(400)
@@ -324,8 +550,13 @@ function createElementScript(f: ReturnType<typeof bootPage>): StandInElement {
 
 it('keeps counting when a partially executed batch falls back to one package', async () => {
   const { facade } = hostFacade()
-  const graph = bootGraph('r1', ['one', 'two'], [{ phase: 'application', url: '/plugins/??one/client.js,two/client.js&rev=r1', entries: ['one', 'two'] }])
-  const f = bootPage(undefined, {}, { boot: graph, loader: facade }); f.mountBoot()
+  const graph = bootGraph(
+    'r1',
+    ['one', 'two'],
+    [{ phase: 'application', url: '/plugins/??one/client.js,two/client.js&rev=r1', entries: ['one', 'two'] }],
+  )
+  const f = bootPage(undefined, {}, { boot: graph, loader: facade })
+  f.mountBoot()
   facade.create({ boot: graph })
   const batch = f.window.__DSH_TRANSPORT__.loadBundle('/plugins/??one/client.js,two/client.js&rev=r1')
   facade.load({ id: 'one/client' })
@@ -342,7 +573,8 @@ it('keeps counting when a partially executed batch falls back to one package', a
 it('uses a readable label for known DSH modules instead of their package identifiers', async () => {
   const { facade } = hostFacade()
   const graph = bootGraph('r1', ['@deepseek-ai/dsh-client-ui-theme'])
-  const f = bootPage(undefined, {}, { boot: graph, loader: facade }); f.mountBoot()
+  const f = bootPage(undefined, {}, { boot: graph, loader: facade })
+  f.mountBoot()
   facade.create({ boot: graph })
   const loading = f.window.__DSH_TRANSPORT__.loadBundle('/plugins/??@deepseek-ai/dsh-client-ui-theme/client.js&rev=r1')
   f.advance(320)
@@ -357,30 +589,63 @@ it('uses a readable label for known DSH modules instead of their package identif
 
 it('compares the manifest revision and stores a baseline only after the Host took the page over', () => {
   const first = new Map<string, string>()
-  const fresh = bootPage(undefined, {}, { boot: bootGraph('r1', ['one']), store: storage(first) }); fresh.mountBoot()
+  const fresh = bootPage(undefined, {}, { boot: bootGraph('r1', ['one']), store: storage(first) })
+  fresh.mountBoot()
   expect(lines(fresh).stage).toBe('首次核对完成')
   expect(first.size).toBe(0)
-  fresh.root.replaceChildren(fresh.createElement('main')); fresh.mutate()
+  fresh.root.replaceChildren(fresh.createElement('main'))
+  fresh.mutate()
   expect(first.get('dsh-rc-boot-graph')).toBe('r1')
 
-  const same = bootPage(undefined, {}, { boot: bootGraph('r1', ['one']), store: storage(new Map([['dsh-rc-boot-graph', 'r1']])) })
+  const same = bootPage(
+    undefined,
+    {},
+    { boot: bootGraph('r1', ['one']), store: storage(new Map([['dsh-rc-boot-graph', 'r1']])) },
+  )
   expect(lines(same).stage).toBe('插件清单未变化')
-  const changed = bootPage(undefined, {}, { boot: bootGraph('r2', ['one']), store: storage(new Map([['dsh-rc-boot-graph', 'r1']])) })
+  const changed = bootPage(
+    undefined,
+    {},
+    { boot: bootGraph('r2', ['one']), store: storage(new Map([['dsh-rc-boot-graph', 'r1']])) },
+  )
   expect(lines(changed).stage).toBe('插件清单有变化')
-  const denied = bootPage(undefined, {}, { boot: bootGraph('r1', ['one']), store: { getItem() { throw new Error('denied') }, setItem() { throw new Error('denied') } } })
+  const denied = bootPage(
+    undefined,
+    {},
+    {
+      boot: bootGraph('r1', ['one']),
+      store: {
+        getItem() {
+          throw new Error('denied')
+        },
+        setItem() {
+          throw new Error('denied')
+        },
+      },
+    },
+  )
   expect(lines(denied).stage).toBe('已读取本次插件清单')
 })
 
 it.each([
-  ['returning', 'r2', false], ['updated plugins', 'r1', false], ['reduced motion', null, true],
+  ['returning', 'r2', false],
+  ['updated plugins', 'r1', false],
+  ['reduced motion', null, true],
 ] as const)('removes the startup screen as soon as the workspace mounts: %s', (_name, previous, reducedMotion) => {
   const values = new Map(previous ? [['dsh-rc-boot-graph', previous]] : [])
-  const f = bootPage(undefined, {}, { boot: bootGraph('r2', ['one']), store: storage(values), reducedMotion, deferPaint: true })
+  const f = bootPage(
+    undefined,
+    {},
+    { boot: bootGraph('r2', ['one']), store: storage(values), reducedMotion, deferPaint: true },
+  )
   f.mountBoot()
   expect(screenOf(f)).toBeDefined()
-  f.root.replaceChildren(f.createElement('main')); f.mutate()
+  f.root.replaceChildren(f.createElement('main'))
+  f.mutate()
   expect(screenOf(f)).toBeUndefined()
-  f.frame(); f.frame(); f.advance(3000)
+  f.frame()
+  f.frame()
+  f.advance(3000)
   expect(screenOf(f)).toBeUndefined()
   expect(values.get('dsh-rc-boot-graph')).toBe('r2')
   expect(f.report()).toMatchObject({ result: 'ready', mounted: true })
@@ -388,14 +653,28 @@ it.each([
 
 it('keeps the first-visit completion when storage is blocked and the Host error on a failed revisit', () => {
   const boot = bootGraph('new', ['one'])
-  const denied = bootPage(undefined, {}, { boot, store: { getItem() { throw new Error('denied') } } })
-  denied.mountBoot(); denied.root.replaceChildren(denied.createElement('main')); denied.mutate()
+  const denied = bootPage(
+    undefined,
+    {},
+    {
+      boot,
+      store: {
+        getItem() {
+          throw new Error('denied')
+        },
+      },
+    },
+  )
+  denied.mountBoot()
+  denied.root.replaceChildren(denied.createElement('main'))
+  denied.mutate()
   denied.advance(320)
   expect(lines(denied).stage).toBe('✓ 启动完成')
   const values = new Map([['dsh-rc-boot-graph', 'old']])
   const revisit = bootPage(undefined, {}, { boot, reducedMotion: true, store: storage(values) })
   const { card } = revisit.mountBoot()
-  card.textContent = 'Failed to load plugins'; revisit.mutate()
+  card.textContent = 'Failed to load plugins'
+  revisit.mutate()
   expect(revisit.root.querySelector('[data-dsh-rc-boot-status]')?.textContent).toContain('重新加载')
   expect(revisit.report()).toMatchObject({ phase: 'failed' })
   expect(values.get('dsh-rc-boot-graph')).toBe('old')
@@ -403,7 +682,20 @@ it('keeps the first-visit completion when storage is blocked and the Host error 
 
 it('names the graph size and no denominator when the loader interface does not match', () => {
   const graph = bootGraph('r1', ['one', 'two'])
-  const f = bootPage(undefined, {}, { boot: graph, loader: { mode: 'live', load() {}, create() { throw new Error('late') } } })
+  const f = bootPage(
+    undefined,
+    {},
+    {
+      boot: graph,
+      loader: {
+        mode: 'live',
+        load() {},
+        create() {
+          throw new Error('late')
+        },
+      },
+    },
+  )
   f.mountBoot()
   f.advance(80)
   expect(lines(f).count).toBe('共 2 个模块')
@@ -416,7 +708,8 @@ it('keeps the verdict for 320ms, then shows only the completion for 440ms before
   const f = bootPage(undefined, {}, { boot: bootGraph('r1', ['one']), store: storage(map) })
   f.mountBoot()
   f.advance(100)
-  f.root.replaceChildren(f.createElement('main')); f.mutate()
+  f.root.replaceChildren(f.createElement('main'))
+  f.mutate()
   f.advance(219)
   expect(lines(f).stage).toBe('首次核对完成')
   f.advance(1)
@@ -441,10 +734,12 @@ it('holds a late plugin-check verdict for 320ms from when it first appears', () 
   f.mutate()
   expect(lines(f).stage).toBe('首次核对完成')
   const { boot } = f.mountBoot()
-  f.root.replaceChildren(f.createElement('main')); f.mutate()
+  f.root.replaceChildren(f.createElement('main'))
+  f.mutate()
   f.advance(1000)
   expect(lines(f).stage).toBe('首次核对完成')
-  f.frame(); f.frame()
+  f.frame()
+  f.frame()
   f.advance(319)
   expect(lines(f).stage).toBe('首次核对完成')
   f.advance(1)
@@ -458,7 +753,7 @@ it('uses a stationary indeterminate marker and no transitions for reduced motion
   expect(script).toContain('animation:dsh-rc-sweep 1.6s ease-in-out infinite')
   expect(script).toContain('transition:width 180ms ease-out')
   expect(script).toContain('pointer-events:none')
-  expect(script).toContain("aria-live")
+  expect(script).toContain('aria-live')
   expect(script).toContain('background:Canvas;color:CanvasText')
   expect(script).toContain('data-ready=true')
   expect(script).not.toContain('dsh-rc-pulse')
@@ -466,29 +761,34 @@ it('uses a stationary indeterminate marker and no transitions for reduced motion
 
 it('reports ready only after the official boot DOM is replaced by the application', () => {
   const unknown = bootPage()
-  unknown.root.append(unknown.createElement('div')); unknown.mutate()
+  unknown.root.append(unknown.createElement('div'))
+  unknown.mutate()
   expect(unknown.report()).toMatchObject({ result: 'unknown', mounted: false })
-  const f = bootPage(); f.mountBoot()
+  const f = bootPage()
+  f.mountBoot()
   expect(f.report()).toMatchObject({ result: 'pending', mounted: false })
-  f.root.replaceChildren(); f.mutate()
+  f.root.replaceChildren()
+  f.mutate()
   expect(f.report()).toMatchObject({ result: 'pending', mounted: false })
-  f.root.replaceChildren(f.createElement('main')); f.mutate()
+  f.root.replaceChildren(f.createElement('main'))
+  f.mutate()
   expect(f.report()).toMatchObject({ phase: 'ready', result: 'ready', mounted: true })
-  expect(f.elements.some(element => element.id === 'dsh-rc-boot-errors')).toBe(false)
+  expect(f.elements.some((element) => element.id === 'dsh-rc-boot-errors')).toBe(false)
 })
 
 it('observes native script transport while leaving retry and fallback to the Host', async () => {
-  const f = bootPage(), { boot } = f.mountBoot()
+  const f = bootPage(),
+    { boot } = f.mountBoot()
   const load = f.window.__DSH_TRANSPORT__.loadBundle as (url: string) => Promise<void>
-  const first = load('/plugins/??one/client.js,two/client.js&rev=batch').catch(error => error)
+  const first = load('/plugins/??one/client.js,two/client.js&rev=batch').catch((error) => error)
   const script = f.document.head.children.at(-1)!
   expect(script.async).toBe(true)
   f.advance(80)
   expect(lines(f).stage).toBe('正在加载模块')
   script.fire('error')
   expect(await first).toBeInstanceOf(Error)
-  expect(f.document.head.children.filter(node => node.tagName === 'SCRIPT')).toHaveLength(0)
-  expect(f.elements.filter(element => element.tagName === 'SCRIPT')).toHaveLength(1)
+  expect(f.document.head.children.filter((node) => node.tagName === 'SCRIPT')).toHaveLength(0)
+  expect(f.elements.filter((element) => element.tagName === 'SCRIPT')).toHaveLength(1)
   expect(boot.textContent).not.toContain('启动失败')
   const fallback = load('/plugins/??one/client.js&rev=one')
   createElementScript(f).fire('load')
@@ -496,45 +796,78 @@ it('observes native script transport while leaving retry and fallback to the Hos
   f.advance(80)
   expect(lines(f).stage).toBe('正在初始化插件')
   expect(f.requests).toHaveLength(0)
-  expect(f.report()).toMatchObject({ result: 'pending', mounted: false, completedResources: 1, resources: [{ result: 'error' }, { result: 'loaded' }] })
+  expect(f.report()).toMatchObject({
+    result: 'pending',
+    mounted: false,
+    completedResources: 1,
+    resources: [{ result: 'error' }, { result: 'loaded' }],
+  })
 })
 
 it('delegates an existing transport and preserves its rejection without adding scripts', async () => {
-  const failure = new Error('transport failed'), calls: string[] = []
-  const transport = { loadBundle(this: unknown, url: string): Promise<void> { expect(this).toBe(transport); calls.push(url); return Promise.reject(failure) } }
+  const failure = new Error('transport failed'),
+    calls: string[] = []
+  const transport = {
+    loadBundle(this: unknown, url: string): Promise<void> {
+      expect(this).toBe(transport)
+      calls.push(url)
+      return Promise.reject(failure)
+    },
+  }
   const f = bootPage(undefined, transport)
   const pending = f.window.__DSH_TRANSPORT__.loadBundle('/plugins/one.js?rev=x')
   expect(calls).toEqual(['/plugins/one.js?rev=x'])
   await expect(pending).rejects.toBe(failure)
-  expect(f.document.head.children.filter(node => node.tagName === 'SCRIPT')).toHaveLength(0)
+  expect(f.document.head.children.filter((node) => node.tagName === 'SCRIPT')).toHaveLength(0)
 })
 
 it('never replays a write after the selected line loses its response', async () => {
-  const link = { ready: true, line: 'upstream', fetch: vi.fn().mockRejectedValue(new Error('lost direct response')), preferDirectForWrite: vi.fn(async () => false), invalidateUpstream: vi.fn() }
-  const f = bootPage(undefined, {}, { context: { direct: { signal: '/rc/direct/signal', preference: 'public' } }, link })
+  const link = {
+    ready: true,
+    line: 'upstream',
+    fetch: vi.fn().mockRejectedValue(new Error('lost direct response')),
+    preferDirectForWrite: vi.fn(async () => false),
+    invalidateUpstream: vi.fn(),
+  }
+  const f = bootPage(
+    undefined,
+    {},
+    { context: { direct: { signal: '/rc/direct/signal', preference: 'public' } }, link },
+  )
   const write = () => f.window.__DSH_FILE_UPLOAD__.fetch('/api/write', { method: 'POST', body: 'once' })
-  const first = write(); await settle(); f.rejectRequest()
+  const first = write()
+  await settle()
+  f.rejectRequest()
   await expect(first).rejects.toThrow('Network unavailable')
   expect(link.invalidateUpstream).toHaveBeenCalledTimes(1)
   expect(link.fetch).not.toHaveBeenCalled()
-  const second = write(); await settle(); f.answerWith(503, '{}')
+  const second = write()
+  await settle()
+  f.answerWith(503, '{}')
   expect((await second).status).toBe(503)
   expect(link.fetch).not.toHaveBeenCalled()
   link.preferDirectForWrite.mockResolvedValue(true)
   await expect(write()).rejects.toThrow('lost direct response')
   expect(link.fetch).toHaveBeenCalledTimes(1)
-  expect(f.requests.map(row => row.method)).toEqual(['POST', 'POST'])
+  expect(f.requests.map((row) => row.method)).toEqual(['POST', 'POST'])
 })
 
 it('invalidates the entry sample on network changes and when the phone returns to the foreground', () => {
   const link = { invalidateUpstream: vi.fn(), checkLines: vi.fn() }
-  const f = bootPage(undefined, {}, { context: { direct: { signal: '/rc/direct/signal', preference: 'public' } }, link })
-  f.document.hidden = true; f.fire('visibilitychange', new Event('visibilitychange'))
+  const f = bootPage(
+    undefined,
+    {},
+    { context: { direct: { signal: '/rc/direct/signal', preference: 'public' } }, link },
+  )
+  f.document.hidden = true
+  f.fire('visibilitychange', new Event('visibilitychange'))
   expect(link.invalidateUpstream).not.toHaveBeenCalled()
   f.fire('offline', new Event('offline'))
   expect(link.checkLines).not.toHaveBeenCalled()
-  f.document.hidden = false; f.fire('visibilitychange', new Event('visibilitychange'))
-  f.network.dispatchEvent(new Event('change')); f.fire('online', new Event('online'))
+  f.document.hidden = false
+  f.fire('visibilitychange', new Event('visibilitychange'))
+  f.network.dispatchEvent(new Event('change'))
+  f.fire('online', new Event('online'))
   expect(link.invalidateUpstream).toHaveBeenCalledTimes(4)
   expect(link.checkLines).toHaveBeenCalledTimes(3)
 })
@@ -542,10 +875,13 @@ it('invalidates the entry sample on network changes and when the phone returns t
 function connectionFor(f: ReturnType<typeof bootPage>) {
   let state: ReturnType<ConnectionFace['state']['getSnapshot']> = 'connecting'
   let generation: object | undefined
-  const stateListeners = new Set<() => void>(), generationListeners = new Set<() => void>()
+  const stateListeners = new Set<() => void>(),
+    generationListeners = new Set<() => void>()
   const subscribe = (listeners: Set<() => void>) => (listener: () => void) => {
     listeners.add(listener)
-    return () => { listeners.delete(listener) }
+    return () => {
+      listeners.delete(listener)
+    }
   }
   const runtime = f.window.__DSH_RC_CONNECTION__ as RemoteRuntime
   const reconnect = vi.fn()
@@ -554,15 +890,27 @@ function connectionFor(f: ReturnType<typeof bootPage>) {
     generation: { getSnapshot: () => generation, subscribe: subscribe(generationListeners) },
     reconnect,
   })
-  const setState = (next: typeof state) => { state = next; for (const listener of stateListeners) listener() }
-  const setGeneration = (next: typeof generation) => { generation = next; for (const listener of generationListeners) listener() }
+  const setState = (next: typeof state) => {
+    state = next
+    for (const listener of stateListeners) listener()
+  }
+  const setGeneration = (next: typeof generation) => {
+    generation = next
+    for (const listener of generationListeners) listener()
+  }
   const openMux = () => {
     const socket = new f.window.WebSocket('wss://rc.example/api/remote.mux') as StandInSocket
     socket.fire('open')
     return socket
   }
-  const ready = () => { setState('connected'); setGeneration({}) }
-  const lost = () => { setGeneration(undefined); setState('connecting') }
+  const ready = () => {
+    setState('connected')
+    setGeneration({})
+  }
+  const lost = () => {
+    setGeneration(undefined)
+    setState('connecting')
+  }
   return { runtime, reconnect, openMux, ready, lost, setState, setGeneration }
 }
 
@@ -571,13 +919,19 @@ it('keeps the current page and the reconnect indicator until the Host handshake 
   const host = connectionFor(f)
   const connection = host.openMux()
   host.ready()
-  expect(host.runtime.getSnapshot()).toMatchObject({ phase: 'connected', entry: 'public', route: 'public', version: '0.7.1' })
-  host.lost(); connection.fire('close')
+  expect(host.runtime.getSnapshot()).toMatchObject({
+    phase: 'connected',
+    entry: 'public',
+    route: 'public',
+    version: '0.7.1',
+  })
+  host.lost()
+  connection.fire('close')
   f.rejectRequest()
   await settle()
   const banner = connectionStatus(f)!
   expect(announcement(f)).toBe('正在重新连接电脑…')
-  const retry = banner.children.find(child => child.tagName === 'BUTTON')!
+  const retry = banner.children.find((child) => child.tagName === 'BUTTON')!
   expect(retry.attributes['aria-label']).toBe('正在重新连接，点击重试')
   retry.onclick!()
   expect(host.reconnect).toHaveBeenCalledOnce()
@@ -596,37 +950,69 @@ it('keeps the current page and the reconnect indicator until the Host handshake 
 it('wakes a lost Host once in the foreground and leaves open and pending sockets alone', () => {
   const f = bootPage(undefined, {}, { language: 'en-US' })
   const host = connectionFor(f)
-  const visible = () => { f.document.hidden = false; f.fire('visibilitychange', {}); f.fire('pageshow', { persisted: true }); f.advance(0) }
-  const hidden = () => { f.document.hidden = true; f.fire('visibilitychange', {}) }
+  const visible = () => {
+    f.document.hidden = false
+    f.fire('visibilitychange', {})
+    f.fire('pageshow', { persisted: true })
+    f.advance(0)
+  }
+  const hidden = () => {
+    f.document.hidden = true
+    f.fire('visibilitychange', {})
+  }
   visible()
-  const live = host.openMux(); host.ready()
-  hidden(); visible()
+  const live = host.openMux()
+  host.ready()
+  hidden()
+  visible()
   expect(host.reconnect).not.toHaveBeenCalled()
-  hidden(); host.lost(); live.fire('close')
+  hidden()
+  host.lost()
+  live.fire('close')
   f.browser.onLine = false
   visible()
   expect(host.reconnect).not.toHaveBeenCalled()
   expect(connectionStatus(f)?.attributes.lang).toBe('en')
   f.browser.onLine = true
-  hidden(); visible(); visible()
+  hidden()
+  visible()
+  visible()
   expect(host.reconnect).toHaveBeenCalledOnce()
   const pending = new f.window.WebSocket('/api/remote.mux') as StandInSocket
-  hidden(); visible()
+  hidden()
+  visible()
   expect(host.reconnect).toHaveBeenCalledOnce()
   pending.fire('close')
-  hidden(); visible()
+  hidden()
+  visible()
   expect(host.reconnect).toHaveBeenCalledTimes(2)
 })
 
 it('bounds boot reports and removes credentials, arbitrary query parameters and fragments', async () => {
-  const f = bootPage(undefined, { loadBundle: async () => {} }); f.mountBoot()
-  for (let index = 0; index < 12; index++) await f.window.__DSH_TRANSPORT__.loadBundle(`https://user:password@rc.example/plugins/??one/client.js&rev=r${index}&token=resource-secret#key`)
-  f.fire('error', { message: 'secret in message', filename: 'https://rc.example/app.js?token=script-secret#key', lineno: 7 })
-  const report = f.report(), serialized = JSON.stringify(report)
+  const f = bootPage(undefined, { loadBundle: async () => {} })
+  f.mountBoot()
+  for (let index = 0; index < 12; index++)
+    await f.window.__DSH_TRANSPORT__.loadBundle(
+      `https://user:password@rc.example/plugins/??one/client.js&rev=r${index}&token=resource-secret#key`,
+    )
+  f.fire('error', {
+    message: 'secret in message',
+    filename: 'https://rc.example/app.js?token=script-secret#key',
+    lineno: 7,
+  })
+  const report = f.report(),
+    serialized = JSON.stringify(report)
   expect(report.resources).toHaveLength(8)
-  expect(report.resources[0]).toMatchObject({ origin: 'https://rc.example', path: '/plugins/', rev: 'r4', result: 'loaded' })
+  expect(report.resources[0]).toMatchObject({
+    origin: 'https://rc.example',
+    path: '/plugins/',
+    rev: 'r4',
+    result: 'loaded',
+  })
   expect(report).toMatchObject({ origin: 'https://rc.example', path: '/app', completedResources: 12 })
-  expect(serialized).not.toMatch(/page-secret|credential|password|resource-secret|script-secret|secret in message|token=|#key/)
+  expect(serialized).not.toMatch(
+    /page-secret|credential|password|resource-secret|script-secret|secret in message|token=|#key/,
+  )
   expect(serialized.length).toBeLessThan(7000)
 })
 
@@ -655,7 +1041,11 @@ it('hands a cross-origin EventSource to the browser instead of throwing on const
 
 it('deduplicates authorization probes after the first session opens', async () => {
   const { window, requests, answer } = bootPage()
-  const open = (path: string) => { const socket = new window.WebSocket(path); socket.fire('open'); return socket }
+  const open = (path: string) => {
+    const socket = new window.WebSocket(path)
+    socket.fire('open')
+    return socket
+  }
   open('/rc/sse?path=%2Fapi%2Fsse').fire('close')
   // A socket that never opened says nothing about the authorization.
   new window.WebSocket('/api/remote.mux').fire('close')
@@ -665,7 +1055,7 @@ it('deduplicates authorization probes after the first session opens', async () =
   expect(requests).toHaveLength(1)
   expect(JSON.parse(requests[0]!.body!)).toEqual({ action: 'status' })
   answer()
-  await new Promise(resolve => setImmediate(resolve))
+  await new Promise((resolve) => setImmediate(resolve))
   open('/api/remote.mux').fire('close')
   expect(requests).toHaveLength(2)
 })
@@ -691,7 +1081,9 @@ it('backs a failing carrier off from 3s to 30s and resets after a live connectio
 it('asks a revoked device to pair again in a modal without a reload action', async () => {
   const f = bootPage()
   f.fire('dsh-rc-offline', new Event('dsh-rc-offline'))
-  const socket = new f.window.WebSocket('/api/remote.mux'); socket.fire('open'); socket.fire('close')
+  const socket = new f.window.WebSocket('/api/remote.mux')
+  socket.fire('open')
+  socket.fire('close')
   f.answerWith(403, JSON.stringify({ code: 'unpaired' }))
   await settle()
   const modal = dialog(f.elements)!
@@ -699,41 +1091,64 @@ it('asks a revoked device to pair again in a modal without a reload action', asy
   expect(modal.attributes.open).toBe('')
   expect(modal.attributes['aria-labelledby']).toBe('dsh-rc-disconnected-title')
   expect(modal.attributes['aria-describedby']).toBe('dsh-rc-disconnected-text')
-  expect(modal.children.find(child => child.tagName === 'H2')?.textContent).toBe('设备授权已失效')
-  expect(modal.children.find(child => child.tagName === 'P')?.textContent).toContain('扫描新的二维码')
-  expect(modal.children.find(child => child.tagName === 'BUTTON')).toBeUndefined()
+  expect(modal.children.find((child) => child.tagName === 'H2')?.textContent).toBe('设备授权已失效')
+  expect(modal.children.find((child) => child.tagName === 'P')?.textContent).toContain('扫描新的二维码')
+  expect(modal.children.find((child) => child.tagName === 'BUTTON')).toBeUndefined()
   f.fire('dsh-rc-offline', new Event('dsh-rc-offline'))
   expect(connectionStatus(f)).toBeUndefined()
 })
 
 it('detects an expired relay session after the network returns and the mux fails to reopen', async () => {
   const f = bootPage()
-  const socket = new f.window.WebSocket('/api/remote.mux'); socket.fire('open'); socket.fire('close')
+  const socket = new f.window.WebSocket('/api/remote.mux')
+  socket.fire('open')
+  socket.fire('close')
   f.rejectRequest()
   await settle()
   expect(dialog(f.elements)).toBeUndefined()
   new f.window.WebSocket('/api/remote.mux').fire('close')
-  expect(f.requests.filter(request => request.url.endsWith('/manage'))).toHaveLength(2)
+  expect(f.requests.filter((request) => request.url.endsWith('/manage'))).toHaveLength(2)
   f.answerWith(401, JSON.stringify({ error: { code: 'AUTH_REQUIRED' } }))
   await settle()
-  expect(dialog(f.elements)?.children.find(child => child.tagName === 'H2')?.textContent).toBe('设备授权已失效')
+  expect(dialog(f.elements)?.children.find((child) => child.tagName === 'H2')?.textContent).toBe('设备授权已失效')
 })
 
 const HOST_ID = '5QKQY_VIKcY52sBuej3ozcSh4gUAwAYe0YENr18qsfA'
 const FINGERPRINT = 'e5029063f54829c639dac06e7a3de8cd'
 const LAN_URL = 'http://192.168.1.9:59395'
 const IDENTITY = { id: HOST_ID, fingerprint: FINGERPRINT }
-const context = (): BootContext => ({ fallback: { node: IDENTITY, hostId: HOST_ID, fingerprint: FINGERPRINT, url: LAN_URL } })
-const legacyContext = (): BootContext => ({ fallback: { node: null, hostId: HOST_ID, fingerprint: FINGERPRINT, url: LAN_URL } })
-const v2OnlyContext = (): BootContext => ({ fallback: { node: IDENTITY, hostId: null, fingerprint: null, url: LAN_URL } })
-const fallbackAnswer = () => ({ sameHost: true, node: IDENTITY, url: LAN_URL, hostId: HOST_ID, fingerprint: FINGERPRINT })
-const settle = async () => { await new Promise(resolve => setTimeout(resolve, 0)); await new Promise(resolve => setImmediate(resolve)) }
-const dialog = (elements: StandInElement[]) => elements.find(node => node.id === 'dsh-rc-disconnected')
-const connectionStatus = (f: ReturnType<typeof bootPage>) => f.document.getElementById('dsh-rc-connection-status') ?? undefined
-const announcement = (f: ReturnType<typeof bootPage>) => connectionStatus(f)?.children.find(child => child.attributes.role === 'status')?.textContent
+const context = (): BootContext => ({
+  fallback: { node: IDENTITY, hostId: HOST_ID, fingerprint: FINGERPRINT, url: LAN_URL },
+})
+const legacyContext = (): BootContext => ({
+  fallback: { node: null, hostId: HOST_ID, fingerprint: FINGERPRINT, url: LAN_URL },
+})
+const v2OnlyContext = (): BootContext => ({
+  fallback: { node: IDENTITY, hostId: null, fingerprint: null, url: LAN_URL },
+})
+const fallbackAnswer = () => ({
+  sameHost: true,
+  node: IDENTITY,
+  url: LAN_URL,
+  hostId: HOST_ID,
+  fingerprint: FINGERPRINT,
+})
+const settle = async () => {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await new Promise((resolve) => setImmediate(resolve))
+}
+const dialog = (elements: StandInElement[]) => elements.find((node) => node.id === 'dsh-rc-disconnected')
+const connectionStatus = (f: ReturnType<typeof bootPage>) =>
+  f.document.getElementById('dsh-rc-connection-status') ?? undefined
+const announcement = (f: ReturnType<typeof bootPage>) =>
+  connectionStatus(f)?.children.find((child) => child.attributes.role === 'status')?.textContent
 
 it('announces the LAN route only after the landing page establishes its Host session', () => {
-  const f = bootPage(undefined, {}, { search: '?rc=lan', href: 'https://rc.example/?rc=lan', context: { entry: 'lan' } })
+  const f = bootPage(
+    undefined,
+    {},
+    { search: '?rc=lan', href: 'https://rc.example/?rc=lan', context: { entry: 'lan' } },
+  )
   expect(f.historyReplacements).toEqual(['/'])
   const host = connectionFor(f)
   host.openMux()
@@ -812,7 +1227,7 @@ it('offers in-place recovery after a LAN outage and keeps the current workspace'
   expect(dialog(f.elements)).toBeUndefined()
   expect(host.runtime.getSnapshot()).toMatchObject({ phase: 'reconnecting', reason: 'lan-unavailable' })
   expect(announcement(f)).toBe('局域网暂不可用，点击重试当前连接')
-  connectionStatus(f)!.children.find(child => child.tagName === 'BUTTON')!.onclick!()
+  connectionStatus(f)!.children.find((child) => child.tagName === 'BUTTON')!.onclick!()
   expect(host.reconnect).toHaveBeenCalledOnce()
   expect(f.reloads()).toBe(0)
 })
@@ -821,8 +1236,20 @@ it('never follows a LAN entry that reports another Host, another fingerprint or 
   for (const answer of [
     { sameHost: true, url: LAN_URL, hostId: 'A'.repeat(43), fingerprint: FINGERPRINT },
     { sameHost: true, url: LAN_URL, hostId: HOST_ID, fingerprint: '0'.repeat(32) },
-    { sameHost: true, url: LAN_URL, node: { id: 'A'.repeat(43), fingerprint: FINGERPRINT }, hostId: HOST_ID, fingerprint: FINGERPRINT },
-    { sameHost: true, url: LAN_URL, node: { id: HOST_ID, fingerprint: '0'.repeat(32) }, hostId: HOST_ID, fingerprint: FINGERPRINT },
+    {
+      sameHost: true,
+      url: LAN_URL,
+      node: { id: 'A'.repeat(43), fingerprint: FINGERPRINT },
+      hostId: HOST_ID,
+      fingerprint: FINGERPRINT,
+    },
+    {
+      sameHost: true,
+      url: LAN_URL,
+      node: { id: HOST_ID, fingerprint: '0'.repeat(32) },
+      hostId: HOST_ID,
+      fingerprint: FINGERPRINT,
+    },
     { sameHost: true, url: 'http://10.0.0.7:59395', hostId: HOST_ID, fingerprint: FINGERPRINT },
     { sameHost: false, reason: 'identity', url: LAN_URL, hostId: HOST_ID, fingerprint: FINGERPRINT },
   ]) {
@@ -833,8 +1260,8 @@ it('never follows a LAN entry that reports another Host, another fingerprint or 
     await settle()
     expect(f.replacements).toEqual([])
     const modal = dialog(f.elements)!
-    expect(modal.children.find(child => child.tagName === 'P')?.textContent).toContain('扫描新的二维码')
-    const retry = modal.children.find(child => child.tagName === 'BUTTON')!
+    expect(modal.children.find((child) => child.tagName === 'P')?.textContent).toContain('扫描新的二维码')
+    const retry = modal.children.find((child) => child.tagName === 'BUTTON')!
     expect(retry.textContent).toBe('重试当前入口')
     retry.onclick!()
     expect(f.reloads()).toBe(1)

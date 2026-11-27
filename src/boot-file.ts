@@ -17,13 +17,16 @@ export async function openRemoteFile(address: string, fetchFile: typeof fetch, l
   const name = new URL(address, window.location.href).searchParams.get('p')?.split(/[\\/]/).pop() || 'file'
   const loading = en ? 'Downloading file…' : '正在下载文件…'
   const tooLarge = en ? 'This file exceeds 48 MiB. Open it on the computer.' : '文件超过 48 MiB，请在电脑上打开。'
-  const failed = en ? 'Could not open the file. Check the connection to the computer.' : '无法打开文件，请检查与电脑的连接。'
+  const failed = en
+    ? 'Could not open the file. Check the connection to the computer.'
+    : '无法打开文件，请检查与电脑的连接。'
   const close = en ? 'Close' : '关闭'
   const limit = 48 * 1024 * 1024
   const container = view.body ?? view.documentElement
   const panel = view.createElement('section')
   panel.setAttribute('aria-label', en ? 'File preview' : '文件预览')
-  panel.style.cssText = 'display:grid;gap:8px;padding:16px;background:var(--dsw-alias-background-primary,Canvas);color:var(--dsw-alias-label-primary,CanvasText);border:1px solid var(--dsw-alias-border-l2,GrayText);border-radius:12px;font:14px/1.5 system-ui;overflow-wrap:anywhere'
+  panel.style.cssText =
+    'display:grid;gap:8px;padding:16px;background:var(--dsw-alias-background-primary,Canvas);color:var(--dsw-alias-label-primary,CanvasText);border:1px solid var(--dsw-alias-border-l2,GrayText);border-radius:12px;font:14px/1.5 system-ui;overflow-wrap:anywhere'
   const title = view.createElement('strong')
   title.textContent = name
   const status = view.createElement('div')
@@ -53,7 +56,8 @@ export async function openRemoteFile(address: string, fetchFile: typeof fetch, l
   } else {
     panel.id = 'dsh-rc-file-preview'
     view.getElementById(panel.id)?.dispatchEvent(new Event('dsh-rc-preview-replaced'))
-    panel.style.cssText += ';position:fixed;z-index:2147483646;inset-inline-end:12px;bottom:max(12px,env(safe-area-inset-bottom));box-sizing:border-box;width:min(360px,calc(100vw - 24px));max-height:50vh;overflow:auto'
+    panel.style.cssText +=
+      ';position:fixed;z-index:2147483646;inset-inline-end:12px;bottom:max(12px,env(safe-area-inset-bottom));box-sizing:border-box;width:min(360px,calc(100vw - 24px));max-height:50vh;overflow:auto'
   }
 
   const transfer = new AbortController()
@@ -76,7 +80,11 @@ export async function openRemoteFile(address: string, fetchFile: typeof fetch, l
     panel.remove()
     popup?.close()
   }
-  const checkClosed = popup ? setInterval(() => { if (popup.closed) dispose() }, 500) : undefined
+  const checkClosed = popup
+    ? setInterval(() => {
+        if (popup.closed) dispose()
+      }, 500)
+    : undefined
   window.addEventListener('pagehide', dispose)
   popup?.addEventListener('pagehide', dispose)
   if (!popup) panel.addEventListener('dsh-rc-preview-replaced', dispose, { once: true })
@@ -99,9 +107,12 @@ export async function openRemoteFile(address: string, fetchFile: typeof fetch, l
     const mime = response.headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() ?? ''
     // Keep executable and unknown documents out of the gateway's Blob URL origin.
     const text = ['text/plain', 'text/csv', 'application/json'].includes(mime)
-    const media = /^(?:image\/(?:png|jpeg|gif|webp|x-icon|avif|bmp)|video\/(?:mp4|webm|quicktime)|audio\/(?:mpeg|wav|ogg|mp4)|application\/pdf)$/.test(mime)
+    const media =
+      /^(?:image\/(?:png|jpeg|gif|webp|x-icon|avif|bmp)|video\/(?:mp4|webm|quicktime)|audio\/(?:mpeg|wav|ogg|mp4)|application\/pdf)$/.test(
+        mime,
+      )
     const inline = (text || media) && !/^\s*attachment\b/i.test(response.headers.get('content-disposition') ?? '')
-    const type = inline ? text ? 'text/plain;charset=utf-8' : mime : 'application/octet-stream'
+    const type = inline ? (text ? 'text/plain;charset=utf-8' : mime) : 'application/octet-stream'
     let blob: Blob
     if (typeof body?.getReader === 'function') {
       const streamReader = body.getReader()
@@ -120,8 +131,11 @@ export async function openRemoteFile(address: string, fetchFile: typeof fetch, l
         if (now - lastUpdate < 125) continue
         lastUpdate = now
         if (total) progress.value = received
-        const amount = received < 1024 * 1024 ? `${(received / 1024).toFixed(1)} KiB` : `${(received / 1024 / 1024).toFixed(1)} MiB`
-        status.textContent = total ? `${loading} ${Math.min(100, Math.floor(received / total * 100))}%` : `${loading} ${amount}`
+        const amount =
+          received < 1024 * 1024 ? `${(received / 1024).toFixed(1)} KiB` : `${(received / 1024 / 1024).toFixed(1)} MiB`
+        status.textContent = total
+          ? `${loading} ${Math.min(100, Math.floor((received / total) * 100))}%`
+          : `${loading} ${amount}`
       }
       blob = new Blob(chunks, { type })
     } else {
@@ -150,8 +164,11 @@ export async function openRemoteFile(address: string, fetchFile: typeof fetch, l
     actions.insertBefore(download, dismiss)
     if (inline && popup) {
       popup.removeEventListener('pagehide', dispose)
-      try { popup.location.replace(objectUrl) }
-      catch { popup.addEventListener('pagehide', dispose) }
+      try {
+        popup.location.replace(objectUrl)
+      } catch {
+        popup.addEventListener('pagehide', dispose)
+      }
     }
   } catch (error) {
     if (!closed) {

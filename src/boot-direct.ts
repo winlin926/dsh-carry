@@ -24,7 +24,25 @@ export function remoteDirect(options: RemoteDirectOptions) {
   const MAX_FRAME = 16 * 1024
   const UPLOAD_HIGH_WATER = 128 * 1024
   const UPLOAD_LOW_WATER = 32 * 1024
-  const TYPES = ['open', 'body', 'end', 'result', 'chunk', 'done', 'fail', 'cancel', 'ws.open', 'ws.ack', 'ws.text', 'ws.bin', 'ws.cont', 'ws.close', 'ping', 'pong', 'hello']
+  const TYPES = [
+    'open',
+    'body',
+    'end',
+    'result',
+    'chunk',
+    'done',
+    'fail',
+    'cancel',
+    'ws.open',
+    'ws.ack',
+    'ws.text',
+    'ws.bin',
+    'ws.cont',
+    'ws.close',
+    'ping',
+    'pong',
+    'hello',
+  ]
   const ID_OK = /^[A-Za-z0-9_-]{1,64}$/
   const MAX_SOCKET_MESSAGE = 32 * 1024 * 1024
   const encoder = new TextEncoder()
@@ -61,7 +79,9 @@ export function remoteDirect(options: RemoteDirectOptions) {
     try {
       const value = JSON.parse(decoder.decode(payload) || '{}')
       return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
-    } catch { return {} }
+    } catch {
+      return {}
+    }
   }
 
   /** One WebSocket carried over the channel, shaped like the browser's own. */
@@ -79,7 +99,12 @@ export function remoteDirect(options: RemoteDirectOptions) {
     readonly sendText: (data: string) => void
     readonly sendBinary: (data: Uint8Array) => void
     readonly sendClose: (code: number, reason: string) => void
-    constructor(url: string, sendText: (data: string) => void, sendBinary: (data: Uint8Array) => void, sendClose: (code: number, reason: string) => void) {
+    constructor(
+      url: string,
+      sendText: (data: string) => void,
+      sendBinary: (data: Uint8Array) => void,
+      sendClose: (code: number, reason: string) => void,
+    ) {
       super()
       this.url = url
       this.sendText = sendText
@@ -93,15 +118,24 @@ export function remoteDirect(options: RemoteDirectOptions) {
       else if (event.type === 'close') this.onclose?.(event as CloseEvent)
       else if (event.type === 'error') this.onerror?.(event)
     }
-    emitOpen(protocol: string): void { if (this.readyState !== 0) return; this.protocol = protocol; this.readyState = 1; this.emit(new Event('open')) }
-    emitText(data: string): void { if (this.readyState === 1) this.emit(new MessageEvent('message', { data })) }
+    emitOpen(protocol: string): void {
+      if (this.readyState !== 0) return
+      this.protocol = protocol
+      this.readyState = 1
+      this.emit(new Event('open'))
+    }
+    emitText(data: string): void {
+      if (this.readyState === 1) this.emit(new MessageEvent('message', { data }))
+    }
     emitBinary(data: Uint8Array): void {
       if (this.readyState !== 1) return
       const copy = data.slice()
       const value = this.binaryType === 'blob' ? new Blob([copy]) : copy.buffer
       this.emit(new MessageEvent('message', { data: value }))
     }
-    emitError(): void { this.emit(new Event('error')) }
+    emitError(): void {
+      this.emit(new Event('error'))
+    }
     emitClose(code: number, reason: string, wasClean: boolean): void {
       if (this.readyState === 3) return
       this.readyState = 3
@@ -110,10 +144,19 @@ export function remoteDirect(options: RemoteDirectOptions) {
     send(data: string | ArrayBufferLike | ArrayBufferView | Blob): void {
       if (this.readyState === 0) throw new DOMException('WebSocket is not open.', 'InvalidStateError')
       if (this.readyState !== 1) return
-      if (typeof data === 'string') { this.sendText(data); return }
-      if (data instanceof ArrayBuffer) { this.sendBinary(new Uint8Array(data)); return }
-      if (ArrayBuffer.isView(data)) { this.sendBinary(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)); return }
-      void (data as Blob).arrayBuffer().then(buffer => this.sendBinary(new Uint8Array(buffer)))
+      if (typeof data === 'string') {
+        this.sendText(data)
+        return
+      }
+      if (data instanceof ArrayBuffer) {
+        this.sendBinary(new Uint8Array(data))
+        return
+      }
+      if (ArrayBuffer.isView(data)) {
+        this.sendBinary(new Uint8Array(data.buffer, data.byteOffset, data.byteLength))
+        return
+      }
+      void (data as Blob).arrayBuffer().then((buffer) => this.sendBinary(new Uint8Array(buffer)))
     }
     close(code?: number, reason?: string): void {
       if (this.readyState >= 2) return
@@ -163,17 +206,27 @@ export function remoteDirect(options: RemoteDirectOptions) {
   const calls = new Map<string, Call>()
   const sockets = new Map<string, { socket: ChannelSocket; chunks: Uint8Array[]; size: number; binary?: boolean }>()
 
-  const report = (reason?: string): void => { options.onState?.({ ready, line, ...(reason ? { reason } : {}) }) }
+  const report = (reason?: string): void => {
+    options.onState?.({ ready, line, ...(reason ? { reason } : {}) })
+  }
   const newId = (): string => 'r' + (++sequence).toString(36)
 
   function selectLine(reason?: string): void {
     const now = Date.now()
     const previous = line
     if (line === 'direct') {
-      if (!ready || directSlow >= 3 && upstreamLatency * 2 < directLatency ||
-        preference === 'public' && upstreamHealthySince && now - upstreamHealthySince >= 30_000) line = 'upstream'
-    } else if (ready && (upstreamFailures >= 2 || upstreamSlow >= 3 && directLatency * 2 < upstreamLatency ||
-      preference === 'lan' && (!hasConnected || directHealthySince > 0 && now - directHealthySince >= 30_000))) {
+      if (
+        !ready ||
+        (directSlow >= 3 && upstreamLatency * 2 < directLatency) ||
+        (preference === 'public' && upstreamHealthySince && now - upstreamHealthySince >= 30_000)
+      )
+        line = 'upstream'
+    } else if (
+      ready &&
+      (upstreamFailures >= 2 ||
+        (upstreamSlow >= 3 && directLatency * 2 < upstreamLatency) ||
+        (preference === 'lan' && (!hasConnected || (directHealthySince > 0 && now - directHealthySince >= 30_000))))
+    ) {
       line = 'direct'
     }
     if (line !== previous || reason) report(reason)
@@ -192,13 +245,18 @@ export function remoteDirect(options: RemoteDirectOptions) {
     if (publicProbe || closed) return publicProbe ?? Promise.resolve()
     const generation = probeGeneration
     const started = Date.now()
-    const abort = upstreamAbort = new AbortController()
+    const abort = new AbortController()
+    upstreamAbort = abort
     const timer = options.setTimeout(() => abort.abort(), 2_000)
-    publicProbe = options.fetch(options.signalPath, { method: 'GET', cache: 'no-store', signal: abort.signal, redirect: 'error' })
-      .then(async response => {
+    publicProbe = options
+      .fetch(options.signalPath, { method: 'GET', cache: 'no-store', signal: abort.signal, redirect: 'error' })
+      .then(async (response) => {
         if (generation !== probeGeneration) return
-        if (response.status === 403 && response.headers.get('content-type')?.includes('application/json') &&
-          (await response.json().catch(() => null))?.code === 'unpaired') {
+        if (
+          response.status === 403 &&
+          response.headers.get('content-type')?.includes('application/json') &&
+          (await response.json().catch(() => null))?.code === 'unpaired'
+        ) {
           if (generation === probeGeneration) stop()
           return
         }
@@ -212,13 +270,15 @@ export function remoteDirect(options: RemoteDirectOptions) {
         upstreamSlow = upstreamLatency >= 1_500 ? upstreamSlow + 1 : 0
         upstreamHealthySince = upstreamSlow ? 0 : upstreamHealthySince || started
         healthyUntil = upstreamSlow ? 0 : now + 5_000
-      }).catch(() => {
+      })
+      .catch(() => {
         if (generation !== probeGeneration) return
         healthyUntil = 0
         upstreamFailures++
         upstreamHealthySince = 0
         upstreamLatency = Infinity
-      }).finally(() => {
+      })
+      .finally(() => {
         options.clearTimeout(timer)
         if (generation !== probeGeneration) return
         upstreamAbort = undefined
@@ -241,8 +301,14 @@ export function remoteDirect(options: RemoteDirectOptions) {
         dc.removeEventListener('bufferedamountlow', drain)
         signal.removeEventListener('abort', abort)
       }
-      const drain = () => { cleanup(); resolve() }
-      const abort = () => { cleanup(); reject(signal.reason) }
+      const drain = () => {
+        cleanup()
+        resolve()
+      }
+      const abort = () => {
+        cleanup()
+        reject(signal.reason)
+      }
       dc.addEventListener('bufferedamountlow', drain)
       signal.addEventListener('abort', abort)
       if (dc.bufferedAmount <= UPLOAD_LOW_WATER) drain()
@@ -256,7 +322,10 @@ export function remoteDirect(options: RemoteDirectOptions) {
     if (call.timer !== undefined) options.clearTimeout(call.timer)
     call.stopUpload?.()
     call.cleanup?.()
-    if (error !== undefined) { call.controller?.error(error); call.reject(error) }
+    if (error !== undefined) {
+      call.controller?.error(error)
+      call.reject(error)
+    }
   }
 
   function openChannel(): void {
@@ -271,7 +340,8 @@ export function remoteDirect(options: RemoteDirectOptions) {
     if (closed || options.visible?.() === false || !channel || channel.readyState !== 'open') return
     void probeUpstream()
     if (probing) return
-    const id = probeId = newId()
+    const id = newId()
+    probeId = id
     probeStarted = Date.now()
     probing = options.setTimeout(() => {
       probing = undefined
@@ -280,7 +350,11 @@ export function remoteDirect(options: RemoteDirectOptions) {
       failures++
       if (failures >= 2) reset('直连线路超时。')
     }, 2_000)
-    try { send('ping', id, new Uint8Array()) } catch { reset('直连通道已断开。') }
+    try {
+      send('ping', id, new Uint8Array())
+    } catch {
+      reset('直连通道已断开。')
+    }
   }
 
   function notePong(id: string): void {
@@ -303,33 +377,66 @@ export function remoteDirect(options: RemoteDirectOptions) {
 
   function onFrame(bytes: Uint8Array): void {
     let frame: { t: string; id: string; payload: Uint8Array }
-    try { frame = decodeFrame(bytes) } catch { return }
-    if (frame.t === 'ping') { try { send('pong', frame.id, frame.payload) } catch { /* gone */ } return }
-    if (frame.t === 'pong') { notePong(frame.id); return }
+    try {
+      frame = decodeFrame(bytes)
+    } catch {
+      return
+    }
+    if (frame.t === 'ping') {
+      try {
+        send('pong', frame.id, frame.payload)
+      } catch {
+        /* gone */
+      }
+      return
+    }
+    if (frame.t === 'pong') {
+      notePong(frame.id)
+      return
+    }
     const pending = sockets.get(frame.id)
     if (frame.t === 'ws.ack') {
       if (!pending) return
       const answer = readControl(frame.payload)
-      if (answer.ok !== true) { sockets.delete(frame.id); pending.socket.emitError(); pending.socket.emitClose(1006, 'Connection failed', false); return }
+      if (answer.ok !== true) {
+        sockets.delete(frame.id)
+        pending.socket.emitError()
+        pending.socket.emitClose(1006, 'Connection failed', false)
+        return
+      }
       pending.socket.emitOpen(typeof answer.protocol === 'string' ? answer.protocol : '')
       return
     }
     if (frame.t === 'ws.text' || frame.t === 'ws.bin' || frame.t === 'ws.cont') {
-      if (!pending || !frame.payload.length || frame.payload[0] !== 0 && frame.payload[0] !== 1) return
+      if (!pending || !frame.payload.length || (frame.payload[0] !== 0 && frame.payload[0] !== 1)) return
       if (frame.t !== 'ws.cont') {
-        if (pending.binary !== undefined) { pending.socket.close(1002, 'Invalid message sequence'); return }
+        if (pending.binary !== undefined) {
+          pending.socket.close(1002, 'Invalid message sequence')
+          return
+        }
         pending.binary = frame.t === 'ws.bin'
-      } else if (pending.binary === undefined) { pending.socket.close(1002, 'Unexpected continuation'); return }
+      } else if (pending.binary === undefined) {
+        pending.socket.close(1002, 'Unexpected continuation')
+        return
+      }
       const chunk = frame.payload.slice(1)
       pending.size += chunk.length
-      if (pending.size > MAX_SOCKET_MESSAGE) { pending.socket.close(1009, 'Message too large'); return }
+      if (pending.size > MAX_SOCKET_MESSAGE) {
+        pending.socket.close(1009, 'Message too large')
+        return
+      }
       pending.chunks.push(chunk)
       if (frame.payload[0] === 0) return
       const value = new Uint8Array(pending.size)
       let offset = 0
-      for (const part of pending.chunks) { value.set(part, offset); offset += part.length }
+      for (const part of pending.chunks) {
+        value.set(part, offset)
+        offset += part.length
+      }
       const binary = pending.binary
-      pending.chunks = []; pending.size = 0; pending.binary = undefined
+      pending.chunks = []
+      pending.size = 0
+      pending.binary = undefined
       if (binary) pending.socket.emitBinary(value)
       else pending.socket.emitText(decoder.decode(value))
       return
@@ -338,7 +445,11 @@ export function remoteDirect(options: RemoteDirectOptions) {
       if (!pending) return
       sockets.delete(frame.id)
       const head = readControl(frame.payload)
-      pending.socket.emitClose(typeof head.code === 'number' ? head.code : 1000, typeof head.reason === 'string' ? head.reason : '', true)
+      pending.socket.emitClose(
+        typeof head.code === 'number' ? head.code : 1000,
+        typeof head.reason === 'string' ? head.reason : '',
+        true,
+      )
       return
     }
     if (frame.t === 'result') {
@@ -350,23 +461,37 @@ export function remoteDirect(options: RemoteDirectOptions) {
       for (const name of Object.keys(source)) {
         const value = source[name]
         if (typeof value === 'string') headers.set(name, value)
-        else if (Array.isArray(value)) for (const item of value) if (typeof item === 'string') headers.append(name, item)
+        else if (Array.isArray(value))
+          for (const item of value) if (typeof item === 'string') headers.append(name, item)
       }
       let controller: ReadableStreamDefaultController<Uint8Array> | undefined
       const status = typeof head.status === 'number' ? head.status : 502
       const noBody = call.head || [204, 205, 304].includes(status)
-      const stream = noBody ? null : new ReadableStream<Uint8Array>({
-        start(next) { controller = next },
-        cancel() { cancelCall(frame.id) },
-      })
+      const stream = noBody
+        ? null
+        : new ReadableStream<Uint8Array>({
+            start(next) {
+              controller = next
+            },
+            cancel() {
+              cancelCall(frame.id)
+            },
+          })
       if (call.stopUpload) {
         call.stopUpload()
         call.stopUpload = undefined
-        try { send('end', frame.id, new Uint8Array()) } catch { /* the channel is closing */ }
+        try {
+          send('end', frame.id, new Uint8Array())
+        } catch {
+          /* the channel is closing */
+        }
       }
       call.controller = controller
       call.progressed = Date.now()
-      if (headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() === 'text/event-stream' && call.timer !== undefined) {
+      if (
+        headers.get('content-type')?.split(';')[0]?.trim().toLowerCase() === 'text/event-stream' &&
+        call.timer !== undefined
+      ) {
         options.clearTimeout(call.timer)
         call.timer = undefined
       }
@@ -376,13 +501,25 @@ export function remoteDirect(options: RemoteDirectOptions) {
     if (frame.t === 'chunk') {
       const call = calls.get(frame.id)
       if (call?.controller && frame.payload.length) {
-        try { call.controller.enqueue(frame.payload.slice()); call.progressed = Date.now() } catch { /* the reader went away */ }
+        try {
+          call.controller.enqueue(frame.payload.slice())
+          call.progressed = Date.now()
+        } catch {
+          /* the reader went away */
+        }
       }
       return
     }
     if (frame.t === 'done') {
       const call = calls.get(frame.id)
-      if (call) { try { call.controller?.close() } catch { /* already closed */ } settle(frame.id) }
+      if (call) {
+        try {
+          call.controller?.close()
+        } catch {
+          /* already closed */
+        }
+        settle(frame.id)
+      }
       return
     }
     if (frame.t === 'fail') {
@@ -390,13 +527,21 @@ export function remoteDirect(options: RemoteDirectOptions) {
       const error = new Error(typeof head.message === 'string' ? head.message : '直连请求失败。')
       const call = calls.get(frame.id)
       if (call) settle(frame.id, error)
-      if (pending) { sockets.delete(frame.id); pending.socket.emitError(); pending.socket.emitClose(1006, 'Connection failed', false) }
+      if (pending) {
+        sockets.delete(frame.id)
+        pending.socket.emitError()
+        pending.socket.emitClose(1006, 'Connection failed', false)
+      }
     }
   }
 
   function cancelCall(id: string, error?: Error): void {
     if (!calls.has(id)) return
-    try { send('cancel', id, new Uint8Array()) } catch { /* the channel already closed */ }
+    try {
+      send('cancel', id, new Uint8Array())
+    } catch {
+      /* the channel already closed */
+    }
     settle(id, error)
   }
 
@@ -404,8 +549,14 @@ export function remoteDirect(options: RemoteDirectOptions) {
     const previous = peer
     const previousChannel = channel
     invalidateUpstream()
-    peer = undefined; channel = undefined; opened = false; ready = false
-    sessionId = ''; directHealthySince = 0; directLatency = Infinity; directSlow = 0
+    peer = undefined
+    channel = undefined
+    opened = false
+    ready = false
+    sessionId = ''
+    directHealthySince = 0
+    directLatency = Infinity
+    directSlow = 0
     if (ticker !== undefined) options.clearInterval(ticker)
     if (probing !== undefined) options.clearTimeout(probing)
     if (connectTimer !== undefined) options.clearTimeout(connectTimer)
@@ -415,15 +566,26 @@ export function remoteDirect(options: RemoteDirectOptions) {
     const previousSockets = [...sockets.values()]
     sockets.clear()
     for (const { socket } of previousSockets) socket.emitClose(1006, reason, false)
-    try { previousChannel?.close() } catch { /* already closed */ }
-    try { void Promise.resolve(previous?.close()).catch(() => {}) } catch { /* already closed */ }
+    try {
+      previousChannel?.close()
+    } catch {
+      /* already closed */
+    }
+    try {
+      void Promise.resolve(previous?.close()).catch(() => {})
+    } catch {
+      /* already closed */
+    }
     schedule()
   }
 
   function schedule(): void {
     if (closed || retry !== undefined) return
     const wait = Math.min(30_000, 1_000 * Math.pow(2, attempt++))
-    retry = options.setTimeout(() => { retry = undefined; void start() }, wait)
+    retry = options.setTimeout(() => {
+      retry = undefined
+      void start()
+    }, wait)
   }
 
   function stop(): void {
@@ -435,7 +597,9 @@ export function remoteDirect(options: RemoteDirectOptions) {
 
   let connectTimer: ReturnType<typeof options.setTimeout> | undefined
   async function start(): Promise<void> {
-    try { await connect() } catch (error) {
+    try {
+      await connect()
+    } catch (error) {
       options.log?.('直连建立失败：' + (error instanceof Error ? error.message : String(error)))
       reset('直连线路建立失败。')
     }
@@ -452,8 +616,10 @@ export function remoteDirect(options: RemoteDirectOptions) {
     dataChannel.bufferedAmountLowThreshold = UPLOAD_LOW_WATER
     channel = dataChannel
     failures = 0
-    connectTimer = options.setTimeout(() => { if (peer === local) reset('直连协商超时。') }, 15_000)
-    dataChannel.onmessage = event => {
+    connectTimer = options.setTimeout(() => {
+      if (peer === local) reset('直连协商超时。')
+    }, 15_000)
+    dataChannel.onmessage = (event) => {
       if (peer !== local) return
       const data: unknown = event.data
       if (data instanceof ArrayBuffer) onFrame(new Uint8Array(data))
@@ -461,15 +627,31 @@ export function remoteDirect(options: RemoteDirectOptions) {
     }
     dataChannel.onopen = () => {
       if (peer !== local) return
-      options.clearTimeout(connectTimer); connectTimer = undefined
-      try { openChannel() } catch { reset('直连协商失败。') }
+      options.clearTimeout(connectTimer)
+      connectTimer = undefined
+      try {
+        openChannel()
+      } catch {
+        reset('直连协商失败。')
+      }
     }
-    dataChannel.onclose = () => { if (peer === local) reset('直连通道已断开。') }
+    dataChannel.onclose = () => {
+      if (peer === local) reset('直连通道已断开。')
+    }
     await local.setLocalDescription(await local.createOffer())
-    await new Promise<void>(resolve => {
-      if (local.iceGatheringState === 'complete') { resolve(); return }
-      const finish = () => { options.clearTimeout(timeout); local.removeEventListener('icegatheringstatechange', check); resolve() }
-      const check = () => { if (local.iceGatheringState === 'complete') finish() }
+    await new Promise<void>((resolve) => {
+      if (local.iceGatheringState === 'complete') {
+        resolve()
+        return
+      }
+      const finish = () => {
+        options.clearTimeout(timeout)
+        local.removeEventListener('icegatheringstatechange', check)
+        resolve()
+      }
+      const check = () => {
+        if (local.iceGatheringState === 'complete') finish()
+      }
       const timeout = options.setTimeout(finish, 3_000)
       local.addEventListener('icegatheringstatechange', check)
     })
@@ -478,12 +660,22 @@ export function remoteDirect(options: RemoteDirectOptions) {
     const timeout = options.setTimeout(() => abort.abort(), 8_000)
     try {
       const response = await options.fetch(options.signalPath, {
-        method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'same-origin', redirect: 'error',
-        body: JSON.stringify({ op: 'offer', sdp: local.localDescription?.sdp ?? '' }), signal: abort.signal,
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'same-origin',
+        redirect: 'error',
+        body: JSON.stringify({ op: 'offer', sdp: local.localDescription?.sdp ?? '' }),
+        signal: abort.signal,
       })
       if (peer !== local) return
-      if (response.status === 403 && response.headers.get('content-type')?.includes('application/json') &&
-        (await response.json().catch(() => null))?.code === 'unpaired') { stop(); return }
+      if (
+        response.status === 403 &&
+        response.headers.get('content-type')?.includes('application/json') &&
+        (await response.json().catch(() => null))?.code === 'unpaired'
+      ) {
+        stop()
+        return
+      }
       if (!response.ok) throw new Error('直连协商被拒绝（HTTP ' + response.status + '）。')
       const answer = await response.json()
       if (peer !== local) return
@@ -491,14 +683,23 @@ export function remoteDirect(options: RemoteDirectOptions) {
       sessionId = answer.sessionId
       await local.setRemoteDescription({ type: 'answer', sdp: answer.sdp })
       if (dataChannel.readyState === 'open') dataChannel.onopen?.(new Event('open'))
-    } catch (error) { if (peer === local) throw error }
-    finally { options.clearTimeout(timeout) }
+    } catch (error) {
+      if (peer === local) throw error
+    } finally {
+      options.clearTimeout(timeout)
+    }
   }
 
   return {
-    get ready(): boolean { return ready },
-    get line(): 'direct' | 'upstream' { return line },
-    state() { return { ready, line, failures, session: sessionId } },
+    get ready(): boolean {
+      return ready
+    },
+    get line(): 'direct' | 'upstream' {
+      return line
+    },
+    state() {
+      return { ready, line, failures, session: sessionId }
+    },
     probe: probeUpstream,
     invalidateUpstream,
     async preferDirectForWrite() {
@@ -509,24 +710,33 @@ export function remoteDirect(options: RemoteDirectOptions) {
       }
       return ready && (line === 'direct' || upstreamFailures > 0)
     },
-    checkLines() { if (peer) probe(); else void start() },
-    reconnectSockets() { for (const { socket } of sockets.values()) socket.close() },
+    checkLines() {
+      if (peer) probe()
+      else void start()
+    },
+    reconnectSockets() {
+      for (const { socket } of sockets.values()) socket.close()
+    },
     start,
     stop,
     async fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
       const base = options.baseUrl()
-      const request = input instanceof Request ? new Request(input, init) : new Request(new URL(String(input), base), init)
+      const request =
+        input instanceof Request ? new Request(input, init) : new Request(new URL(String(input), base), init)
       if (!ready || !channel) throw new Error('直连线路不可用。')
       const url = new URL(request.url)
       if (url.origin !== new URL(base).origin) return options.fetch(request)
       const headers: Record<string, string> = {}
-      request.headers.forEach((value, name) => { headers[name] = value })
+      request.headers.forEach((value, name) => {
+        headers[name] = value
+      })
       const method = request.method.toUpperCase()
       const stream = request.body
       if (method !== 'GET' && method !== 'HEAD' && typeof stream?.getReader !== 'function') {
         // Some browsers report null even for a nonempty Request. A known body distinguishes
         // that case from a genuinely empty write when the caller supplied a Request object.
-        const hidesBodies = input instanceof Request && !new Request(base, { method: 'POST', body: 'x' }).body?.getReader
+        const hidesBodies =
+          input instanceof Request && !new Request(base, { method: 'POST', body: 'x' }).body?.getReader
         if (stream || init?.body != null || hidesBodies) throw new Error('当前浏览器不支持直连流式上传。')
       }
       request.signal.throwIfAborted()
@@ -536,7 +746,8 @@ export function remoteDirect(options: RemoteDirectOptions) {
       return new Promise<Response>((resolve, reject) => {
         const call: Call = { resolve, reject, head: method === 'HEAD', progressed: Date.now() }
         calls.set(requestId, call)
-        const abort = () => cancelCall(requestId, request.signal.reason ?? new DOMException('Request aborted', 'AbortError'))
+        const abort = () =>
+          cancelCall(requestId, request.signal.reason ?? new DOMException('Request aborted', 'AbortError'))
         request.signal.addEventListener('abort', abort, { once: true })
         call.cleanup = () => request.signal.removeEventListener('abort', abort)
         // Per-call idle deadline covers upload progress, the response head, and non-SSE downloads.
@@ -547,11 +758,12 @@ export function remoteDirect(options: RemoteDirectOptions) {
         }
         call.timer = options.setTimeout(timeout, 120_000)
         const upload = new AbortController()
-        if (reader) call.stopUpload = () => {
-          if (upload.signal.aborted) return
-          upload.abort()
-          void reader.cancel().catch(() => {})
-        }
+        if (reader)
+          call.stopUpload = () => {
+            if (upload.signal.aborted) return
+            upload.abort()
+            void reader.cancel().catch(() => {})
+          }
         void (async () => {
           try {
             send('open', requestId, control({ method, path: url.pathname + url.search, headers }))
@@ -564,7 +776,8 @@ export function remoteDirect(options: RemoteDirectOptions) {
                 if (done) break
                 for (let offset = 0; offset < value.byteLength; offset += MAX_FRAME) {
                   const part = value.subarray(offset, offset + MAX_FRAME)
-                  while (dc.bufferedAmount + 3 + requestId.length + part.byteLength > UPLOAD_HIGH_WATER) await waitForDrain(dc, upload.signal)
+                  while (dc.bufferedAmount + 3 + requestId.length + part.byteLength > UPLOAD_HIGH_WATER)
+                    await waitForDrain(dc, upload.signal)
                   upload.signal.throwIfAborted()
                   send('body', requestId, part)
                   call.progressed = Date.now()
@@ -576,8 +789,11 @@ export function remoteDirect(options: RemoteDirectOptions) {
               send('end', requestId, new Uint8Array())
             }
           } catch (error) {
-            if (!upload.signal.aborted) cancelCall(requestId, error instanceof Error ? error : new Error('直连请求发送失败。'))
-          } finally { reader?.releaseLock() }
+            if (!upload.signal.aborted)
+              cancelCall(requestId, error instanceof Error ? error : new Error('直连请求发送失败。'))
+          } finally {
+            reader?.releaseLock()
+          }
         })()
       })
     },
@@ -587,16 +803,25 @@ export function remoteDirect(options: RemoteDirectOptions) {
       const list = protocols ? (Array.isArray(protocols) ? protocols : [protocols]) : []
       const socket = new ChannelSocket(
         url.href,
-        data => sendSocketMessage(socketId, encoder.encode(data), false),
-        data => sendSocketMessage(socketId, data, true),
+        (data) => sendSocketMessage(socketId, encoder.encode(data), false),
+        (data) => sendSocketMessage(socketId, data, true),
         (code, reason) => {
-          try { send('ws.close', socketId, control({ code, reason })) } catch { /* gone */ }
+          try {
+            send('ws.close', socketId, control({ code, reason }))
+          } catch {
+            /* gone */
+          }
         },
       )
       sockets.set(socketId, { socket, chunks: [], size: 0 })
-      try { send('ws.open', socketId, control({ path: url.pathname + url.search, protocols: list })) } catch {
+      try {
+        send('ws.open', socketId, control({ path: url.pathname + url.search, protocols: list }))
+      } catch {
         sockets.delete(socketId)
-        options.setTimeout(() => { socket.emitError(); socket.emitClose(1006, 'Connection failed', false) }, 0)
+        options.setTimeout(() => {
+          socket.emitError()
+          socket.emitClose(1006, 'Connection failed', false)
+        }, 0)
       }
       return socket
     },

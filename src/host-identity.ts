@@ -1,4 +1,11 @@
-import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomUUID, type KeyObject } from 'node:crypto'
+import {
+  createHash,
+  createPrivateKey,
+  createPublicKey,
+  generateKeyPairSync,
+  randomUUID,
+  type KeyObject,
+} from 'node:crypto'
 import { chmod, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { FINGERPRINT_PATTERN } from './remote/node-api.js'
@@ -8,7 +15,13 @@ export const HOST_IDENTITY_FILE = 'host-identity.json'
 const IDENTITY_VERSION = 1
 const IDENTITY_ALGORITHM = 'ed25519'
 
-interface StoredIdentity { version: 1; algorithm: 'ed25519'; publicKey: string; privateKey: string; createdAt: string }
+interface StoredIdentity {
+  version: 1
+  algorithm: 'ed25519'
+  publicKey: string
+  privateKey: string
+  createdAt: string
+}
 
 /** The public half of a Host identity: two encodings of one sha256 digest over the Ed25519 SPKI DER. */
 export interface HostKeyIdentity {
@@ -48,17 +61,30 @@ function corrupt(file: string): Error {
 
 function parseIdentity(file: string, text: string): HostIdentity {
   let value: unknown
-  try { value = JSON.parse(text) } catch { throw corrupt(file) }
+  try {
+    value = JSON.parse(text)
+  } catch {
+    throw corrupt(file)
+  }
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw corrupt(file)
   const stored = value as Record<string, unknown>
-  if (stored.version !== IDENTITY_VERSION || stored.algorithm !== IDENTITY_ALGORITHM || typeof stored.publicKey !== 'string' || typeof stored.privateKey !== 'string' || typeof stored.createdAt !== 'string') throw corrupt(file)
+  if (
+    stored.version !== IDENTITY_VERSION ||
+    stored.algorithm !== IDENTITY_ALGORITHM ||
+    typeof stored.publicKey !== 'string' ||
+    typeof stored.privateKey !== 'string' ||
+    typeof stored.createdAt !== 'string'
+  )
+    throw corrupt(file)
   let privateKey: KeyObject
   let publicDer: Buffer
   try {
     privateKey = createPrivateKey({ key: Buffer.from(stored.privateKey, 'base64url'), format: 'der', type: 'pkcs8' })
     if (privateKey.asymmetricKeyType !== IDENTITY_ALGORITHM) throw new Error('算法不一致。')
     publicDer = createPublicKey(privateKey).export({ format: 'der', type: 'spki' })
-  } catch { throw corrupt(file) }
+  } catch {
+    throw corrupt(file)
+  }
   // The stored public key must be the one this private key actually produces; a partial copy is corruption.
   if (publicDer.toString('base64url') !== stored.publicKey) throw corrupt(file)
   return { ...identityOfPublicKey(publicDer), publicKey: stored.publicKey, privateKey }
@@ -71,7 +97,13 @@ function createIdentity(): { identity: HostIdentity; stored: StoredIdentity } {
   const publicKey = publicDer.toString('base64url')
   return {
     identity: { ...identityOfPublicKey(publicDer), publicKey, privateKey: pair.privateKey },
-    stored: { version: IDENTITY_VERSION, algorithm: IDENTITY_ALGORITHM, publicKey, privateKey: privateDer.toString('base64url'), createdAt: new Date().toISOString() },
+    stored: {
+      version: IDENTITY_VERSION,
+      algorithm: IDENTITY_ALGORITHM,
+      publicKey,
+      privateKey: privateDer.toString('base64url'),
+      createdAt: new Date().toISOString(),
+    },
   }
 }
 
@@ -82,13 +114,18 @@ async function saveIdentity(file: string, stored: StoredIdentity): Promise<void>
     // The key file is written beside its destination and renamed, so a crash never leaves a truncated key.
     await writeFile(temporary, JSON.stringify(stored), { mode: 0o600 })
     await rename(temporary, file)
-  } catch (failure) { await rm(temporary, { force: true }); throw failure }
+  } catch (failure) {
+    await rm(temporary, { force: true })
+    throw failure
+  }
 }
 
 /** Load the Host identity, creating it on first use. Repeated loads of one file return the same hostId. */
 export async function loadHostIdentity(file: string): Promise<HostIdentity> {
   let text: string
-  try { text = await readFile(file, 'utf8') } catch (failure) {
+  try {
+    text = await readFile(file, 'utf8')
+  } catch (failure) {
     if ((failure as NodeJS.ErrnoException).code !== 'ENOENT') throw new Error(`主机身份文件无法读取：${file}。`)
     // Two DSH processes sharing one profile would race here; the rename is atomic and one identity wins.
     const created = createIdentity()

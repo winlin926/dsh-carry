@@ -1,14 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { test } from 'node:test'
-import {
-  api,
-  hostRegistration,
-  randomDeviceId,
-  randomToken,
-  registerHost,
-  startNode,
-} from './helpers.ts'
+import { api, hostRegistration, randomToken, registerHost, startNode } from './helpers.ts'
 
 function expectedEtag(hostId: string, revision: string, path: string, body: string): string {
   const digest = createHash('sha256')
@@ -20,10 +13,6 @@ function expectedEtag(hostId: string, revision: string, path: string, body: stri
   digest.update('\0')
   digest.update(body)
   return `"${digest.digest('hex').slice(0, 32)}"`
-}
-
-function assetUrl(baseUrl: string, hostId: string, revision: string, path: string): string {
-  return `${baseUrl}/assets/${hostId}/${revision}${path}`
 }
 
 async function upload(
@@ -167,7 +156,14 @@ test('asset publishing and serving reject damaged input without 500s', async () 
     assert.equal(badRevision.status, 400)
     assert.equal(badRevision.json.error.code, 'INVALID_REVISION')
 
-    const oversized = await upload(node, host.credential, 'r1', '/big.bin', 'x'.repeat(4096), 'application/octet-stream')
+    const oversized = await upload(
+      node,
+      host.credential,
+      'r1',
+      '/big.bin',
+      'x'.repeat(4096),
+      'application/octet-stream',
+    )
     assert.equal(oversized.status, 413)
     assert.equal(oversized.json.error.code, 'ASSET_TOO_LARGE')
 
@@ -184,8 +180,11 @@ test('asset publishing and serving reject damaged input without 500s', async () 
     const uploads = await Promise.all(
       Array.from({ length: 160 }, (_, index) => upload(node, host.credential, `rev${index}`, '/app.js', 'x')),
     )
-    assert.ok(uploads.some(result => result.status === 429), 'asset uploads must be rate limited')
-    const limited = uploads.find(result => result.status === 429)
+    assert.ok(
+      uploads.some((result) => result.status === 429),
+      'asset uploads must be rate limited',
+    )
+    const limited = uploads.find((result) => result.status === 429)
     assert.equal(limited?.json.error.code, 'RATE_LIMITED')
     assert.ok(Number(limited?.headers.get('retry-after') ?? 0) >= 1)
   } finally {

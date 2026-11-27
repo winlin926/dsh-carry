@@ -24,7 +24,7 @@ export class Router {
   add(method: string, path: string, handler: RouteHandler): this {
     this.routes.push({
       method: method.toUpperCase(),
-      segments: path.split('/').filter(segment => segment.length > 0),
+      segments: path.split('/').filter((segment) => segment.length > 0),
       handler,
     })
     return this
@@ -35,7 +35,7 @@ export class Router {
     const method = ctx.req.method ?? 'GET'
     const head = method === 'HEAD'
     const effectiveMethod = head ? 'GET' : method
-    const pathSegments = ctx.url.pathname.split('/').filter(segment => segment.length > 0)
+    const pathSegments = ctx.url.pathname.split('/').filter((segment) => segment.length > 0)
     let pathMatched = false
     for (const route of this.routes) {
       const params = matchSegments(route.segments, pathSegments)

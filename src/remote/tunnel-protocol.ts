@@ -44,7 +44,10 @@ export const TUNNEL_MAX_REQUESTS_PER_DEVICE = 16
 export const TUNNEL_HELLO_TIMEOUT_MS = 10_000
 
 export type TunnelCapability = 'http' | 'ws' | 'assets' | 'direct'
-export interface TunnelRelayDevice { id: string; name: string }
+export interface TunnelRelayDevice {
+  id: string
+  name: string
+}
 export type TunnelHeaderValue = string | string[]
 export type TunnelHeaders = Record<string, TunnelHeaderValue>
 
@@ -66,9 +69,15 @@ export interface TunnelHttpRequestFrame {
   relayDevice?: TunnelRelayDevice
 }
 /** Node → Host: one piece of the request body, after the header frame. */
-export interface TunnelHttpBodyFrame { t: 'http.body'; id: string }
+export interface TunnelHttpBodyFrame {
+  t: 'http.body'
+  id: string
+}
 /** Node → Host: the request body is complete. */
-export interface TunnelHttpBodyEndFrame { t: 'http.body.end'; id: string }
+export interface TunnelHttpBodyEndFrame {
+  t: 'http.body.end'
+  id: string
+}
 /** Host → node: response header. */
 export interface TunnelHttpResponseFrame {
   t: 'http.response'
@@ -77,13 +86,27 @@ export interface TunnelHttpResponseFrame {
   headers: TunnelHeaders
 }
 /** Host → node: one piece of the response body. */
-export interface TunnelHttpChunkFrame { t: 'http.chunk'; id: string }
+export interface TunnelHttpChunkFrame {
+  t: 'http.chunk'
+  id: string
+}
 /** Host → node: the response is complete. */
-export interface TunnelHttpEndFrame { t: 'http.end'; id: string }
+export interface TunnelHttpEndFrame {
+  t: 'http.end'
+  id: string
+}
 /** Host → node: the response failed before it could be completed. */
-export interface TunnelHttpErrorFrame { t: 'http.error'; id: string; code: string; message: string }
+export interface TunnelHttpErrorFrame {
+  t: 'http.error'
+  id: string
+  code: string
+  message: string
+}
 /** Either side: abandon request `id`. */
-export interface TunnelHttpCancelFrame { t: 'http.cancel'; id: string }
+export interface TunnelHttpCancelFrame {
+  t: 'http.cancel'
+  id: string
+}
 
 /** Node → Host: upgrade one incoming WebSocket request. */
 export interface TunnelWsOpenFrame {
@@ -105,14 +128,30 @@ export interface TunnelWsAckFrame {
   message?: string
 }
 /** Either side: one WebSocket message (or one slice when `fin === false`). `binary` distinguishes text from binary frames. */
-export interface TunnelWsFrameFrame { t: 'ws.frame'; id: string; binary: boolean; fin?: boolean }
+export interface TunnelWsFrameFrame {
+  t: 'ws.frame'
+  id: string
+  binary: boolean
+  fin?: boolean
+}
 /** Either side: close one WebSocket. */
-export interface TunnelWsCloseFrame { t: 'ws.close'; id: string; code?: number; reason?: string }
+export interface TunnelWsCloseFrame {
+  t: 'ws.close'
+  id: string
+  code?: number
+  reason?: string
+}
 
 /** Either side: liveness. */
-export interface TunnelPingFrame { t: 'ping'; at: number }
+export interface TunnelPingFrame {
+  t: 'ping'
+  at: number
+}
 /** Either side: liveness answer. */
-export interface TunnelPongFrame { t: 'pong'; at: number }
+export interface TunnelPongFrame {
+  t: 'pong'
+  at: number
+}
 
 /** Node → Host: a device asks to pair; the Host operator must decide. */
 export interface TunnelPairRequestFrame {
@@ -125,9 +164,15 @@ export interface TunnelPairRequestFrame {
   expiresAt: number
 }
 /** Host → node: the operator approved a pending pairing. */
-export interface TunnelPairApproveFrame { t: 'pair.approve'; requestId: string }
+export interface TunnelPairApproveFrame {
+  t: 'pair.approve'
+  requestId: string
+}
 /** Either side: the operator (or the node) rejected a pending pairing. */
-export interface TunnelPairRejectFrame { t: 'pair.reject'; requestId: string }
+export interface TunnelPairRejectFrame {
+  t: 'pair.reject'
+  requestId: string
+}
 /** Node → Host: a pairing finished; the pending entry can be dropped. */
 export interface TunnelPairCompleteFrame {
   t: 'pair.complete'
@@ -222,7 +267,8 @@ export function decodeTunnelFrame(data: Uint8Array): DecodedTunnelFrame {
   if (headerLength > TUNNEL_FRAME_HEADER_MAX) throw new TunnelFrameError('FRAME_TOO_LARGE', '隧道帧头超过上限。')
   if (bytes.byteLength < 4 + headerLength) throw new TunnelFrameError('FRAME_INVALID', '隧道帧不完整。')
   const payload = bytes.subarray(4 + headerLength)
-  if (payload.byteLength > TUNNEL_FRAME_PAYLOAD_MAX) throw new TunnelFrameError('FRAME_TOO_LARGE', '隧道帧负载超过上限。')
+  if (payload.byteLength > TUNNEL_FRAME_PAYLOAD_MAX)
+    throw new TunnelFrameError('FRAME_TOO_LARGE', '隧道帧负载超过上限。')
   let parsed: unknown
   try {
     parsed = JSON.parse(bytes.subarray(4, 4 + headerLength).toString('utf8'))
@@ -321,7 +367,8 @@ export function asTunnelHeaders(value: unknown): TunnelHeaders {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return output
   for (const [name, entry] of Object.entries(value as Record<string, unknown>)) {
     if (typeof entry === 'string') output[name] = entry
-    else if (Array.isArray(entry) && entry.every(item => typeof item === 'string')) output[name] = [...entry] as string[]
+    else if (Array.isArray(entry) && entry.every((item) => typeof item === 'string'))
+      output[name] = [...entry] as string[]
   }
   return output
 }

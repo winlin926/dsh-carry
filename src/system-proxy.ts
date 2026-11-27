@@ -4,7 +4,10 @@
  */
 import { execFile } from 'node:child_process'
 
-export interface SystemProxy { url: string; source: string }
+export interface SystemProxy {
+  url: string
+  source: string
+}
 export interface DetectionOptions {
   env?: NodeJS.ProcessEnv
   platform?: string
@@ -12,7 +15,7 @@ export interface DetectionOptions {
 }
 
 function runCommand(file: string, args: string[]): Promise<string> {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     execFile(file, args, { timeout: 3000, windowsHide: true }, (error, stdout) => resolve(error ? '' : stdout))
   })
 }
@@ -20,7 +23,12 @@ function runCommand(file: string, args: string[]): Promise<string> {
 /** "host:port", or the per-protocol form "http=host:port;https=host:port". */
 export function pickWindowsProxy(server: string): string | undefined {
   if (!server.includes('=')) return server.trim() || undefined
-  const parts = Object.fromEntries(server.split(';').map(part => part.split('=').map(x => x.trim())).filter(pair => pair.length === 2 && pair[1]))
+  const parts = Object.fromEntries(
+    server
+      .split(';')
+      .map((part) => part.split('=').map((x) => x.trim()))
+      .filter((pair) => pair.length === 2 && pair[1]),
+  )
   return parts.https ?? parts.http
 }
 
@@ -30,7 +38,9 @@ export function httpProxy(value: string): string | undefined {
     const url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `http://${value}`)
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || !url.hostname) return undefined
     return url.origin
-  } catch { return undefined }
+  } catch {
+    return undefined
+  }
 }
 
 export async function detectSystemProxy(options: DetectionOptions = {}): Promise<SystemProxy | null> {
@@ -52,7 +62,10 @@ export async function detectSystemProxy(options: DetectionOptions = {}): Promise
     for (const kind of ['HTTPS', 'HTTP']) {
       const host = field(`${kind}Proxy`)
       if (field(`${kind}Enable`) === '1' && host) {
-        candidates.push({ url: `${host.includes(':') ? `[${host}]` : host}:${field(`${kind}Port`) ?? '80'}`, source: 'macOS 系统代理' })
+        candidates.push({
+          url: `${host.includes(':') ? `[${host}]` : host}:${field(`${kind}Port`) ?? '80'}`,
+          source: 'macOS 系统代理',
+        })
       }
     }
   }

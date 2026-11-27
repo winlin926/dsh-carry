@@ -21,7 +21,11 @@ function readModuleSpecifiers(file: string): string[] {
   const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, false)
   const specs: string[] = []
   for (const statement of source.statements) {
-    if ((ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) && statement.moduleSpecifier && ts.isStringLiteral(statement.moduleSpecifier)) {
+    if (
+      (ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) &&
+      statement.moduleSpecifier &&
+      ts.isStringLiteral(statement.moduleSpecifier)
+    ) {
       specs.push(statement.moduleSpecifier.text)
     }
   }
@@ -35,7 +39,9 @@ describe('shared contract boundary (src/remote)', () => {
         if (spec.startsWith('.')) {
           const resolved = resolve(dirname(file), spec)
           const rel = relative(REMOTE_CONTRACT_DIR, resolved)
-          expect(rel.startsWith('..'), `${relative(ROOT, file)} must not import outside src/remote: ${spec}`).toBe(false)
+          expect(rel.startsWith('..'), `${relative(ROOT, file)} must not import outside src/remote: ${spec}`).toBe(
+            false,
+          )
           continue
         }
         // Only Node built-ins are allowed outside relative src/remote imports, and node-api.ts must remain browser-safe.
@@ -53,7 +59,10 @@ describe('shared contract boundary (src/remote)', () => {
         const relToServer = relative(join(ROOT, 'remote-server'), resolved)
         if (!relToServer.startsWith('..')) continue
         const relToContract = relative(REMOTE_CONTRACT_DIR, resolved)
-        expect(relToContract.startsWith('..'), `${relative(ROOT, file)} may only cross-import from src/remote: ${spec}`).toBe(false)
+        expect(
+          relToContract.startsWith('..'),
+          `${relative(ROOT, file)} may only cross-import from src/remote: ${spec}`,
+        ).toBe(false)
       }
     }
   })
@@ -61,7 +70,9 @@ describe('shared contract boundary (src/remote)', () => {
   it('covers the whole src/remote directory in Docker and remote-server build configs', () => {
     const dockerignore = readFileSync(join(ROOT, '.dockerignore'), 'utf8')
     const dockerfile = readFileSync(join(ROOT, 'remote-server', 'Dockerfile'), 'utf8')
-    const serverTsconfig = JSON.parse(readFileSync(join(ROOT, 'remote-server', 'tsconfig.json'), 'utf8')) as { include?: string[] }
+    const serverTsconfig = JSON.parse(readFileSync(join(ROOT, 'remote-server', 'tsconfig.json'), 'utf8')) as {
+      include?: string[]
+    }
 
     expect(dockerignore).toContain('!src/remote/**')
     expect(dockerfile).toContain('COPY src/remote ./src/remote')

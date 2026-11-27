@@ -45,12 +45,16 @@ export interface CertificateManagerOptions {
   issue?(request: { domain: string; challengeDir: string }): Promise<{ certificate: string; key: string }>
 }
 
-export async function readDeployedCertificate(path: string): Promise<{ expiresAt: number; selfSigned: boolean } | undefined> {
+export async function readDeployedCertificate(
+  path: string,
+): Promise<{ expiresAt: number; selfSigned: boolean } | undefined> {
   try {
     const certificate = new X509Certificate(await readFile(path, 'utf8'))
     const expiresAt = Date.parse(certificate.validTo) || undefined
     return expiresAt ? { expiresAt, selfSigned: certificate.issuer === certificate.subject } : undefined
-  } catch { return undefined }
+  } catch {
+    return undefined
+  }
 }
 
 export function createCertificateManager(options: CertificateManagerOptions): CertificateManager {
@@ -62,7 +66,7 @@ export function createCertificateManager(options: CertificateManagerOptions): Ce
   let timer: ReturnType<typeof setInterval> | undefined
   const paths = (domain: string) => ({
     certificatePath: join(options.deployDir, `${domain}.crt`),
-    keyPath: join(options.deployDir, `${domain}.key`)
+    keyPath: join(options.deployDir, `${domain}.key`),
   })
 
   async function status(): Promise<CertificateStatus> {
@@ -77,7 +81,7 @@ export function createCertificateManager(options: CertificateManagerOptions): Ce
       selfSigned: deployed?.selfSigned === true,
       pending,
       restartRequired: renewedDomain === domain,
-      ...(lastError?.domain === domain ? { error: lastError.message } : {})
+      ...(lastError?.domain === domain ? { error: lastError.message } : {}),
     }
   }
 
@@ -85,7 +89,8 @@ export function createCertificateManager(options: CertificateManagerOptions): Ce
     const domain = options.domain()
     if (!domain) throw new Error('还没有配置固定公网域名。')
     const current = await status()
-    if (!force && !current.selfSigned && current.expiresAt && current.expiresAt - now() > RENEW_BEFORE_MS) return current
+    if (!force && !current.selfSigned && current.expiresAt && current.expiresAt - now() > RENEW_BEFORE_MS)
+      return current
     pending = true
     try {
       await options.beforeIssue?.(domain)
@@ -97,7 +102,7 @@ export function createCertificateManager(options: CertificateManagerOptions): Ce
             stateDir: options.stateDir,
             legacyStateDir: options.legacyStateDir,
             directoryUrl: options.directoryUrl,
-            proxyAddress: options.proxyAddress
+            proxyAddress: options.proxyAddress,
           })
       if (options.domain() !== domain) throw new Error('公网域名已变更，本次证书不会部署；请按新域名重新申请。')
       await options.beforeIssue?.(domain)
@@ -109,12 +114,17 @@ export function createCertificateManager(options: CertificateManagerOptions): Ce
       lastError = { message, domain }
       options.log?.(`证书签发失败：${message}`)
       throw error
-    } finally { pending = false }
+    } finally {
+      pending = false
+    }
     return status()
   }
 
   function ensure(force = false): Promise<CertificateStatus> {
-    if (!running) running = ensureOnce(force).finally(() => { running = undefined })
+    if (!running)
+      running = ensureOnce(force).finally(() => {
+        running = undefined
+      })
     return running
   }
 
@@ -123,14 +133,16 @@ export function createCertificateManager(options: CertificateManagerOptions): Ce
     ensure,
     startAutoRenew() {
       if (timer) return
-      timer = setInterval(() => { void ensure().catch(() => undefined) }, RENEW_INTERVAL_MS)
+      timer = setInterval(() => {
+        void ensure().catch(() => undefined)
+      }, RENEW_INTERVAL_MS)
       timer.unref?.()
     },
     async stop() {
       if (timer) clearInterval(timer)
       timer = undefined
       await running?.catch(() => undefined)
-    }
+    },
   }
 }
 
@@ -138,21 +150,21 @@ export function createCertificateManager(options: CertificateManagerOptions): Ce
 export async function deployCertificate(
   target: { certificatePath: string; keyPath: string },
   issued: { certificate: string; key: string },
-  replaceFile: (source: string, destination: string) => Promise<void> = rename
+  replaceFile: (source: string, destination: string) => Promise<void> = rename,
 ): Promise<void> {
   await mkdir(join(target.certificatePath, '..'), { recursive: true })
   const token = randomUUID()
   const certificateTemporary = `${target.certificatePath}.${token}.tmp`
   const keyTemporary = `${target.keyPath}.${token}.tmp`
   const [previousCertificate, previousKey] = await Promise.all([
-    readFile(target.certificatePath).catch(error => {
+    readFile(target.certificatePath).catch((error) => {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
       throw error
     }),
-    readFile(target.keyPath).catch(error => {
+    readFile(target.keyPath).catch((error) => {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
       throw error
-    })
+    }),
   ])
   let certificateReplacementAttempted = false
   let keyReplacementAttempted = false
@@ -167,20 +179,22 @@ export async function deployCertificate(
   } catch (error) {
     const rollbackErrors: unknown[] = []
     if (certificateReplacementAttempted) {
-      await restoreDeployedFile(target.certificatePath, previousCertificate, false)
-        .catch(failure => { rollbackErrors.push(failure) })
+      await restoreDeployedFile(target.certificatePath, previousCertificate, false).catch((failure) => {
+        rollbackErrors.push(failure)
+      })
     }
     if (keyReplacementAttempted) {
-      await restoreDeployedFile(target.keyPath, previousKey, true)
-        .catch(failure => { rollbackErrors.push(failure) })
+      await restoreDeployedFile(target.keyPath, previousKey, true).catch((failure) => {
+        rollbackErrors.push(failure)
+      })
     }
-    if (rollbackErrors.length) throw new AggregateError([error, ...rollbackErrors], '证书部署失败，且旧证书未能完整恢复。')
+    if (rollbackErrors.length)
+      throw new AggregateError([error, ...rollbackErrors], '证书部署失败，且旧证书未能完整恢复。')
     throw error
   } finally {
-    await Promise.all([
-      rm(certificateTemporary, { force: true }),
-      rm(keyTemporary, { force: true })
-    ]).catch(() => undefined)
+    await Promise.all([rm(certificateTemporary, { force: true }), rm(keyTemporary, { force: true })]).catch(
+      () => undefined,
+    )
   }
 }
 
@@ -194,7 +208,9 @@ async function restoreDeployedFile(path: string, content: Buffer | undefined, pr
     await writeFile(temporary, content, { mode: privateKey ? 0o600 : 0o644, flag: 'wx' })
     if (privateKey) await restrictPrivateKeyAcl(temporary)
     await rename(temporary, path)
-  } finally { await rm(temporary, { force: true }).catch(() => undefined) }
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined)
+  }
 }
 
 async function requestCertificate(request: {
@@ -217,12 +233,12 @@ async function requestCertificate(request: {
     const accountKey = await readOrCreateAccountKey(request.stateDir, request.legacyStateDir)
     const client = new acme.Client({
       directoryUrl: request.directoryUrl ?? acme.directory.letsencrypt.production,
-      accountKey
+      accountKey,
     })
     await client.createAccount({ termsOfServiceAgreed: true })
     const [key, csr] = await acme.crypto.createCsr({
       commonName: request.domain,
-      altNames: [request.domain]
+      altNames: [request.domain],
     })
     const certificate = await client.auto({
       csr,
@@ -234,10 +250,12 @@ async function requestCertificate(request: {
       },
       challengeRemoveFn: async (_authorization, challenge) => {
         await unlink(join(request.challengeDir, challenge.token)).catch(() => undefined)
-      }
+      },
     })
     return { certificate, key: key.toString() }
-  } finally { Object.assign(axios.defaults, defaults) }
+  } finally {
+    Object.assign(axios.defaults, defaults)
+  }
 }
 
 export async function migrateLegacyAccountKey(stateDir: string, legacyStateDir?: string): Promise<boolean> {
@@ -247,8 +265,9 @@ export async function migrateLegacyAccountKey(stateDir: string, legacyStateDir?:
   if (!existsSync(legacy) || existsSync(target)) return false
   await mkdir(stateDir, { recursive: true })
   await copyFile(legacy, target, fsConstants.COPYFILE_EXCL)
-  try { await restrictPrivateKeyAcl(target) }
-  catch (error) {
+  try {
+    await restrictPrivateKeyAcl(target)
+  } catch (error) {
     await rm(target, { force: true }).catch(() => undefined)
     throw error
   }
@@ -280,14 +299,11 @@ async function readOrCreateAccountKey(stateDir: string, legacyStateDir?: string)
 export async function restrictPrivateKeyAcl(path: string): Promise<void> {
   if (process.platform !== 'win32') return
   try {
-    await execFileAsync('icacls', [
-      path,
-      '/inheritance:r',
-      '/grant:r',
-      `${userInfo().username}:(F)`,
-      '*S-1-5-18:(F)',
-      '*S-1-5-32-544:(F)'
-    ], { windowsHide: true })
+    await execFileAsync(
+      'icacls',
+      [path, '/inheritance:r', '/grant:r', `${userInfo().username}:(F)`, '*S-1-5-18:(F)', '*S-1-5-32-544:(F)'],
+      { windowsHide: true },
+    )
   } catch (error) {
     throw new Error(`无法收紧私钥文件权限：${error instanceof Error ? error.message : String(error)}`)
   }

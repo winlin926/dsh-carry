@@ -169,7 +169,7 @@ export function parseSetCookie(raw: string): {
   maxAge: number | null
   path: string | null
 } {
-  const [pair, ...attributes] = raw.split(';').map(part => part.trim())
+  const [pair, ...attributes] = raw.split(';').map((part) => part.trim())
   const index = pair.indexOf('=')
   const name = pair.slice(0, index)
   const value = decodeURIComponent(pair.slice(index + 1))
@@ -185,8 +185,8 @@ export function parseSetCookie(raw: string): {
     name,
     value,
     attributes,
-    secure: attributes.some(attribute => attribute.toLowerCase() === 'secure'),
-    httpOnly: attributes.some(attribute => attribute.toLowerCase() === 'httponly'),
+    secure: attributes.some((attribute) => attribute.toLowerCase() === 'secure'),
+    httpOnly: attributes.some((attribute) => attribute.toLowerCase() === 'httponly'),
     sameSite: attributeValue('samesite'),
     maxAge: maxAge === null ? null : Number(maxAge),
     path: attributeValue('path'),
@@ -219,7 +219,7 @@ export class TestHost {
     this.ws = ws
     this.node = node
     this.hostId = hostId
-    this.closed = new Promise(resolve => {
+    this.closed = new Promise((resolve) => {
       ws.on('close', (code, reason) => {
         this.closeInfo = { code, reason: reason.toString() }
         resolve(this.closeInfo)
@@ -227,7 +227,11 @@ export class TestHost {
     })
     ws.on('message', (data, isBinary) => {
       if (!isBinary) return
-      const buffer = Array.isArray(data) ? Buffer.concat(data) : Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)
+      const buffer = Array.isArray(data)
+        ? Buffer.concat(data)
+        : Buffer.isBuffer(data)
+          ? data
+          : Buffer.from(data as ArrayBuffer)
       let decoded: ReturnType<typeof decodeTunnelFrame>
       try {
         decoded = decodeTunnelFrame(buffer)
@@ -239,7 +243,7 @@ export class TestHost {
         void this.send({ t: 'pong', at: entry.frame.at })
         return
       }
-      const waiter = this.waiters.find(candidate => candidate.match(entry.frame))
+      const waiter = this.waiters.find((candidate) => candidate.match(entry.frame))
       if (waiter) {
         clearTimeout(waiter.timer)
         this.waiters.splice(this.waiters.indexOf(waiter), 1)
@@ -282,11 +286,11 @@ export class TestHost {
   }
 
   count(type: string): number {
-    return this.received.filter(entry => entry.frame.t === type).length
+    return this.received.filter((entry) => entry.frame.t === type).length
   }
 
   next(match: (frame: TunnelFrame) => boolean, timeoutMs = 5_000): Promise<HostFrame> {
-    const index = this.received.findIndex(entry => match(entry.frame))
+    const index = this.received.findIndex((entry) => match(entry.frame))
     if (index >= 0) {
       const [entry] = this.received.splice(index, 1)
       return Promise.resolve(entry!)
@@ -298,7 +302,7 @@ export class TestHost {
         timer: setTimeout(() => {
           const pending = this.waiters.indexOf(waiter)
           if (pending >= 0) this.waiters.splice(pending, 1)
-          const seen = [...new Set(this.received.map(entry => entry.frame.t))].join(',')
+          const seen = [...new Set(this.received.map((entry) => entry.frame.t))].join(',')
           reject(new Error(`timed out waiting for a tunnel frame (received: ${seen || 'none'})`))
         }, timeoutMs),
       }
@@ -307,14 +311,14 @@ export class TestHost {
   }
 
   nextOfType(type: string, timeoutMs = 5_000): Promise<HostFrame> {
-    return this.next(frame => frame.t === type, timeoutMs)
+    return this.next((frame) => frame.t === type, timeoutMs)
   }
 
   waitClose(timeoutMs = 5_000): Promise<{ code: number; reason: string }> {
     if (this.closeInfo) return Promise.resolve(this.closeInfo)
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('timed out waiting for the tunnel to close')), timeoutMs)
-      void this.closed.then(info => {
+      void this.closed.then((info) => {
         clearTimeout(timer)
         resolve(info)
       })
@@ -373,7 +377,8 @@ export async function completePairing(
   const hostClient = await TestHost.connect(node, host)
 
   const ticketResult = await api(node.baseUrl, 'POST', '/v1/pairings', { token: host.credential })
-  if (ticketResult.status !== 201) throw new Error(`ticket creation failed: ${ticketResult.status} ${ticketResult.text}`)
+  if (ticketResult.status !== 201)
+    throw new Error(`ticket creation failed: ${ticketResult.status} ${ticketResult.text}`)
 
   const client = {
     deviceId: randomDeviceId(),
@@ -420,7 +425,7 @@ export async function completePairing(
 }
 
 export function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /** Raw HTTP request, needed when a test must control the `Host` header. */
@@ -438,9 +443,9 @@ export async function rawRequest(
         path: options.path ?? '/',
         headers: { host: `127.0.0.1:${port}`, ...(options.headers ?? {}) },
       },
-      res => {
+      (res) => {
         const chunks: Buffer[] = []
-        res.on('data', chunk => chunks.push(chunk))
+        res.on('data', (chunk) => chunks.push(chunk))
         res.on('end', () => {
           resolve({
             status: res.statusCode ?? 0,

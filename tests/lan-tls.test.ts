@@ -14,16 +14,31 @@ it('reads a hostname-bound PEM pair and returns its canonical HTTPS origin', asy
   expect((await readLanTls(config, 45872)).origin).toBe('https://lan.example.test:45872')
 })
 
-it.each(['https://lan.example.test', 'lan.example.test:443', 'lan.example.test/path', '*.example.test', 'lan.example.test.', 'bad_name', '127.0.0.1', '127.1', '::1', ' lan.example.test', ''])('rejects a noncanonical DNS hostname: %s', async hostname => {
+it.each([
+  'https://lan.example.test',
+  'lan.example.test:443',
+  'lan.example.test/path',
+  '*.example.test',
+  'lan.example.test.',
+  'bad_name',
+  '127.0.0.1',
+  '127.1',
+  '::1',
+  ' lan.example.test',
+  '',
+])('rejects a noncanonical DNS hostname: %s', async (hostname) => {
   await expect(readLanTls({ ...config, hostname }, 443)).rejects.toThrow(/主机名/)
 })
 
-it.each([0, -1, 65536, 4.5, NaN])('requires a fixed valid port: %s', async port => {
+it.each([0, -1, 65536, 4.5, NaN])('requires a fixed valid port: %s', async (port) => {
   await expect(readLanTls(config, port)).rejects.toThrow(/固定端口/)
 })
 
 it.each([
-  ['expired', /过期/], ['future', /尚未生效/], ['wrong-host', /SAN/], ['cn-only', /SAN/],
+  ['expired', /过期/],
+  ['future', /尚未生效/],
+  ['wrong-host', /SAN/],
+  ['cn-only', /SAN/],
 ] as const)('rejects an unusable certificate: %s', async (name, message) => {
   await expect(readLanTls({ ...config, certFile: fixture(name) }, 443)).rejects.toThrow(message)
 })

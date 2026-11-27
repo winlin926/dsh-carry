@@ -22,14 +22,30 @@ import {
 import type { PublicNode } from '../src/client/index.js'
 
 const CLIENT_DIR = new URL('../src/client/', import.meta.url)
-const SOURCE = readdirSync(CLIENT_DIR).filter((name) => name.endsWith('.ts')).sort()
-  .map((name) => readFileSync(new URL(name, CLIENT_DIR), 'utf8')).join('\n')
+const SOURCE = readdirSync(CLIENT_DIR)
+  .filter((name) => name.endsWith('.ts'))
+  .sort()
+  .map((name) => readFileSync(new URL(name, CLIENT_DIR), 'utf8'))
+  .join('\n')
 const FINGERPRINT = 'e5029063f54829c639dac06e7a3de8cd'
 const OTHER_FINGERPRINT = '0f1e2d3c4b5a69788796a5b4c3d2e1f0'
 const makeNode = (overrides: Partial<PublicNode> = {}): PublicNode => ({
-  id: 'node-1', url: 'https://node.example.com', kind: 'gateway', name: '节点一', version: '0.5.1', protocol: 1,
-  capabilities: ['remote-control'], hostId: 'host-1', fingerprint: FINGERPRINT, node: null, identityChange: null,
-  addedAt: 1_700_000_000_000, lastCheckAt: 1_700_000_500_000, lastCheckOk: true, lastCheckError: null, pending: false,
+  id: 'node-1',
+  url: 'https://node.example.com',
+  kind: 'gateway',
+  name: '节点一',
+  version: '0.5.1',
+  protocol: 1,
+  capabilities: ['remote-control'],
+  hostId: 'host-1',
+  fingerprint: FINGERPRINT,
+  node: null,
+  identityChange: null,
+  addedAt: 1_700_000_000_000,
+  lastCheckAt: 1_700_000_500_000,
+  lastCheckOk: true,
+  lastCheckError: null,
+  pending: false,
   ...overrides,
 })
 
@@ -40,22 +56,46 @@ describe('parsePublicNodeAddress', () => {
   })
 
   it('requires a complete URL with a scheme', () => {
-    expect(parsePublicNodeAddress('node.example.com')).toEqual({ ok: false, error: '公网节点地址格式无效，请填写完整的 https:// 地址。' })
-    expect(parsePublicNodeAddress('https://')).toEqual({ ok: false, error: '公网节点地址格式无效，请填写完整的 https:// 地址。' })
+    expect(parsePublicNodeAddress('node.example.com')).toEqual({
+      ok: false,
+      error: '公网节点地址格式无效，请填写完整的 https:// 地址。',
+    })
+    expect(parsePublicNodeAddress('https://')).toEqual({
+      ok: false,
+      error: '公网节点地址格式无效，请填写完整的 https:// 地址。',
+    })
   })
 
   it('rejects insecure, credentialed and path-bearing addresses with the Host wording', () => {
-    expect(parsePublicNodeAddress('http://node.example.com')).toEqual({ ok: false, error: '公网节点必须使用 https:// 地址。' })
-    expect(parsePublicNodeAddress('https://user:secret@node.example.com')).toEqual({ ok: false, error: '公网节点地址不能包含账号或密码。' })
-    expect(parsePublicNodeAddress('https://node.example.com/panel')).toEqual({ ok: false, error: '公网节点地址只能是域名，不能带路径、查询参数或锚点。' })
-    expect(parsePublicNodeAddress('https://node.example.com/?a=1')).toEqual({ ok: false, error: '公网节点地址只能是域名，不能带路径、查询参数或锚点。' })
-    expect(parsePublicNodeAddress('https://node.example.com/#top')).toEqual({ ok: false, error: '公网节点地址只能是域名，不能带路径、查询参数或锚点。' })
+    expect(parsePublicNodeAddress('http://node.example.com')).toEqual({
+      ok: false,
+      error: '公网节点必须使用 https:// 地址。',
+    })
+    expect(parsePublicNodeAddress('https://user:secret@node.example.com')).toEqual({
+      ok: false,
+      error: '公网节点地址不能包含账号或密码。',
+    })
+    expect(parsePublicNodeAddress('https://node.example.com/panel')).toEqual({
+      ok: false,
+      error: '公网节点地址只能是域名，不能带路径、查询参数或锚点。',
+    })
+    expect(parsePublicNodeAddress('https://node.example.com/?a=1')).toEqual({
+      ok: false,
+      error: '公网节点地址只能是域名，不能带路径、查询参数或锚点。',
+    })
+    expect(parsePublicNodeAddress('https://node.example.com/#top')).toEqual({
+      ok: false,
+      error: '公网节点地址只能是域名，不能带路径、查询参数或锚点。',
+    })
   })
 
   it('normalizes a valid address to its origin, keeping a non-default port', () => {
     expect(parsePublicNodeAddress('https://node.example.com')).toEqual({ ok: true, url: 'https://node.example.com' })
     expect(parsePublicNodeAddress(' https://node.example.com/ ')).toEqual({ ok: true, url: 'https://node.example.com' })
-    expect(parsePublicNodeAddress('https://node.example.com:8443')).toEqual({ ok: true, url: 'https://node.example.com:8443' })
+    expect(parsePublicNodeAddress('https://node.example.com:8443')).toEqual({
+      ok: true,
+      url: 'https://node.example.com:8443',
+    })
   })
 })
 
@@ -78,7 +118,9 @@ describe('nodeKindLabel', () => {
 describe('nodeFingerprintGroups', () => {
   it('formats 32 hex digits as eight upper-case groups of four', () => {
     expect(nodeFingerprintGroups(FINGERPRINT)).toBe('E502-9063-F548-29C6-39DA-C06E-7A3D-E8CD')
-    expect(nodeFingerprintGroups('E502-9063-F548-29C6-39DA-C06E-7A3D-E8CD')).toBe('E502-9063-F548-29C6-39DA-C06E-7A3D-E8CD')
+    expect(nodeFingerprintGroups('E502-9063-F548-29C6-39DA-C06E-7A3D-E8CD')).toBe(
+      'E502-9063-F548-29C6-39DA-C06E-7A3D-E8CD',
+    )
   })
 
   it('falls back without inventing groups', () => {
@@ -91,7 +133,9 @@ describe('nodeFingerprintGroups', () => {
 describe('publicNodeFingerprint', () => {
   it('prefers the node identity and falls back to the legacy flat fingerprint', () => {
     const identity = { id: 'v'.repeat(43), fingerprint: OTHER_FINGERPRINT, publicKey: 'k'.repeat(43) }
-    expect(publicNodeFingerprint(makeNode({ protocol: 2, node: identity, hostId: null, fingerprint: null }))).toBe(OTHER_FINGERPRINT)
+    expect(publicNodeFingerprint(makeNode({ protocol: 2, node: identity, hostId: null, fingerprint: null }))).toBe(
+      OTHER_FINGERPRINT,
+    )
     expect(publicNodeFingerprint(makeNode({ protocol: 1 }))).toBe(FINGERPRINT)
     expect(publicNodeFingerprint(makeNode({ protocol: null, fingerprint: null }))).toBeNull()
   })
@@ -136,9 +180,15 @@ describe('checkedAtLabel', () => {
 describe('nodeCheckStatus', () => {
   it('reports pending, never checked, healthy and failed probes', () => {
     expect(nodeCheckStatus(makeNode({ pending: true }))).toEqual({ label: '待检测确认', tone: 'warn' })
-    expect(nodeCheckStatus(makeNode({ lastCheckAt: null, lastCheckOk: false }))).toEqual({ label: '尚未检测', tone: 'neutral' })
+    expect(nodeCheckStatus(makeNode({ lastCheckAt: null, lastCheckOk: false }))).toEqual({
+      label: '尚未检测',
+      tone: 'neutral',
+    })
     expect(nodeCheckStatus(makeNode())).toEqual({ label: '检测正常', tone: 'ok' })
-    expect(nodeCheckStatus(makeNode({ lastCheckAt: 1_700_000_000_000, lastCheckOk: false }))).toEqual({ label: '检测失败', tone: 'danger' })
+    expect(nodeCheckStatus(makeNode({ lastCheckAt: 1_700_000_000_000, lastCheckOk: false }))).toEqual({
+      label: '检测失败',
+      tone: 'danger',
+    })
   })
 
   it('lets pending win over a stale check result', () => {
@@ -153,7 +203,7 @@ describe('sortPublicNodes', () => {
       makeNode({ id: 'current', lastCheckAt: 100 }),
       makeNode({ id: 'pending', pending: true, lastCheckAt: 950 }),
     ]
-    expect(sortPublicNodes(nodes, 'current').map(node => node.id)).toEqual(['current', 'pending', 'checked-new'])
+    expect(sortPublicNodes(nodes, 'current').map((node) => node.id)).toEqual(['current', 'pending', 'checked-new'])
   })
 
   it('orders the remaining entries by most recent check, then by added time', () => {
@@ -163,14 +213,17 @@ describe('sortPublicNodes', () => {
       makeNode({ id: 'new', lastCheckAt: 900 }),
       makeNode({ id: 'never-b', lastCheckAt: null, addedAt: 20 }),
     ]
-    expect(sortPublicNodes(nodes, null).map(node => node.id)).toEqual(['new', 'old', 'never-b', 'never-a'])
+    expect(sortPublicNodes(nodes, null).map((node) => node.id)).toEqual(['new', 'old', 'never-b', 'never-a'])
   })
 
   it('keeps a deterministic order for equal entries and never mutates the input', () => {
-    const nodes = [makeNode({ id: 'b', url: 'https://b.example.com' }), makeNode({ id: 'a', url: 'https://a.example.com' })]
+    const nodes = [
+      makeNode({ id: 'b', url: 'https://b.example.com' }),
+      makeNode({ id: 'a', url: 'https://a.example.com' }),
+    ]
     const sorted = sortPublicNodes(nodes, null)
-    expect(sorted.map(node => node.id)).toEqual(['a', 'b'])
-    expect(nodes.map(node => node.id)).toEqual(['b', 'a'])
+    expect(sorted.map((node) => node.id)).toEqual(['a', 'b'])
+    expect(nodes.map((node) => node.id)).toEqual(['b', 'a'])
     expect(sorted).not.toBe(nodes)
   })
 })
@@ -179,20 +232,32 @@ describe('serviceStateLabel', () => {
   it('separates connected, connecting and failed states with the Host reason', () => {
     expect(serviceStateLabel({ connected: true })).toEqual({ label: '已连接', tone: 'ok', reason: '' })
     expect(serviceStateLabel({ connected: false })).toEqual({ label: '正在连接…', tone: 'warn', reason: '' })
-    expect(serviceStateLabel({ connected: false, lastError: '节点身份校验失败。' })).toEqual({ label: '未连接', tone: 'danger', reason: '节点身份校验失败。' })
+    expect(serviceStateLabel({ connected: false, lastError: '节点身份校验失败。' })).toEqual({
+      label: '未连接',
+      tone: 'danger',
+      reason: '节点身份校验失败。',
+    })
   })
 })
 
 describe('connection way copy', () => {
   it('renames the public way to 公网连接 and drops the old wording from the panel', () => {
-    expect(WAYS.find(way => way.mode === 'public')?.name).toBe('公网连接')
+    expect(WAYS.find((way) => way.mode === 'public')?.name).toBe('公网连接')
     expect(SOURCE).not.toContain('任意网络')
   })
 })
 
 describe('node interactions use the documented manage actions', () => {
   it('wires every node control to its manage action', () => {
-    for (const action of ['addPublicNode', 'checkPublicNode', 'setCurrentPublicNode', 'removePublicNode', 'confirmPublicNodeIdentity', 'approveServicePairing', 'rejectServicePairing']) {
+    for (const action of [
+      'addPublicNode',
+      'checkPublicNode',
+      'setCurrentPublicNode',
+      'removePublicNode',
+      'confirmPublicNodeIdentity',
+      'approveServicePairing',
+      'rejectServicePairing',
+    ]) {
       expect(SOURCE).toContain(action)
     }
   })
@@ -200,7 +265,9 @@ describe('node interactions use the documented manage actions', () => {
 
 describe('public node identity copy', () => {
   it('states the trust boundary of a public node verbatim', () => {
-    expect(SOURCE).toContain('通过 HTTPS 连接该节点。节点或隧道运营者可能看到转发给本机的请求与内容，本插件不提供端到端加密。请只添加你信任的节点。')
+    expect(SOURCE).toContain(
+      '通过 HTTPS 连接该节点。节点或隧道运营者可能看到转发给本机的请求与内容，本插件不提供端到端加密。请只添加你信任的节点。',
+    )
   })
 
   it('explains an identity change and offers re-confirmation instead of pretending it is healthy', () => {
@@ -271,7 +338,10 @@ describe('sidebar pairing approvals', () => {
       page.dispatchEvent(new Event('visibilitychange'))
       expect(check).toHaveBeenCalledTimes(3)
       expect(vi.getTimerCount()).toBe(0)
-    } finally { vi.unstubAllGlobals(); vi.useRealTimers() }
+    } finally {
+      vi.unstubAllGlobals()
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -283,7 +353,7 @@ describe('remote panel', () => {
     vi.stubGlobal('document', doc)
     vi.stubGlobal('navigator', { language: 'en-US' })
     expect(clientText(undefined, '远程控制', 'Remote Control')).toBe('远程控制')
-    expect(clientText({ resolveText: words => words.en }, '远程控制', 'Remote Control')).toBe('Remote Control')
+    expect(clientText({ resolveText: (words) => words.en }, '远程控制', 'Remote Control')).toBe('Remote Control')
     doc.documentElement.lang = ''
     expect(clientText(undefined, '远程控制', 'Remote Control')).toBe('Remote Control')
   })
@@ -313,32 +383,52 @@ describe('remote panel', () => {
     const safe = { version: '0.7.0', entry: 'public', route: 'direct', phase: 'connected', durationMs: 40 } as const
     const extra = { url: 'https://private.example', fingerprint: FINGERPRINT, ticket: 'pair-1', cookie: 'session' }
     expect(JSON.parse(remoteDiagnostics({ ...safe, ...extra }))).toEqual(safe)
-    const malformed = { ...extra, version: extra.ticket, entry: extra.url, route: extra.url, phase: 'reconnecting', reason: extra.fingerprint, durationMs: Infinity }
-    expect(JSON.parse(remoteDiagnostics(malformed as Parameters<typeof remoteDiagnostics>[0]))).toEqual({ phase: 'reconnecting' })
+    const malformed = {
+      ...extra,
+      version: extra.ticket,
+      entry: extra.url,
+      route: extra.url,
+      phase: 'reconnecting',
+      reason: extra.fingerprint,
+      durationMs: Infinity,
+    }
+    expect(JSON.parse(remoteDiagnostics(malformed as Parameters<typeof remoteDiagnostics>[0]))).toEqual({
+      phase: 'reconnecting',
+    })
   })
 })
 
 describe('command', () => {
   const transport = globalThis as unknown as { __DSH_TRANSPORT__?: { fetch?: typeof fetch } }
   const original = transport.__DSH_TRANSPORT__
-  afterEach(() => { if (original === undefined) delete transport.__DSH_TRANSPORT__; else transport.__DSH_TRANSPORT__ = original })
+  afterEach(() => {
+    if (original === undefined) delete transport.__DSH_TRANSPORT__
+    else transport.__DSH_TRANSPORT__ = original
+  })
   const respond = (body: unknown, status = 200) => {
-    transport.__DSH_TRANSPORT__ = { fetch: async () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }) }
+    transport.__DSH_TRANSPORT__ = {
+      fetch: async () =>
+        new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }),
+    }
   }
 
   it('turns an HTTP 200 node failure into the thrown Chinese reason', async () => {
     respond({ ok: false, message: '该公网节点已存在。' })
-    await expect(command({ action: 'addPublicNode', url: 'https://node.example.com' })).rejects.toThrow('该公网节点已存在。')
+    await expect(command({ action: 'addPublicNode', url: 'https://node.example.com' })).rejects.toThrow(
+      '该公网节点已存在。',
+    )
   })
 
   it('passes a successful payload through', async () => {
     respond({ ok: true, node: { id: 'node-1' } })
-    const result = await command({ action: 'checkPublicNode', id: 'node-1' }) as unknown as { ok: boolean }
+    const result = (await command({ action: 'checkPublicNode', id: 'node-1' })) as unknown as { ok: boolean }
     expect(result.ok).toBe(true)
   })
 
   it('keeps the HTTP error wording', async () => {
     respond({ error: '当前没有连接自托管公网节点。' }, 400)
-    await expect(command({ action: 'approveServicePairing', id: 'pair-1' })).rejects.toThrow('当前没有连接自托管公网节点。')
+    await expect(command({ action: 'approveServicePairing', id: 'pair-1' })).rejects.toThrow(
+      '当前没有连接自托管公网节点。',
+    )
   })
 })

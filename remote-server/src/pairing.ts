@@ -8,9 +8,7 @@ import {
   newRequestId,
   pairingVerificationCode,
 } from './identity.js'
-import {
-  constantTimeStringEqual,
-} from './identity.js'
+import { constantTimeStringEqual } from './identity.js'
 import type { TunnelFrame } from '../../src/remote/tunnel-protocol.js'
 import type { HostRow, PairingRequestRow, Repositories } from './repositories.js'
 import type { SessionService } from './sessions.js'
@@ -108,7 +106,10 @@ export class PairingService {
   }): ClaimResult {
     const now = this.clock()
     if (decodeIdentityKey(input.client.identityKey) === null) {
-      throw ApiError.badRequest('INVALID_IDENTITY_KEY', 'client.identityKey must be a Base64URL-encoded SPKI DER public key.')
+      throw ApiError.badRequest(
+        'INVALID_IDENTITY_KEY',
+        'client.identityKey must be a Base64URL-encoded SPKI DER public key.',
+      )
     }
     const ticketHash = hashToken(input.ticket)
     const ticket = this.repos.findTicket(ticketHash)
@@ -128,7 +129,10 @@ export class PairingService {
       existingRelationship.revoked_at === null &&
       existingRelationship.client_identity_key !== input.client.identityKey
     ) {
-      throw ApiError.conflict('DEVICE_IDENTITY_MISMATCH', 'This device is already paired with a different identity key.')
+      throw ApiError.conflict(
+        'DEVICE_IDENTITY_MISMATCH',
+        'This device is already paired with a different identity key.',
+      )
     }
     if (!this.notifier().isHostOnline(host.host_id)) {
       throw ApiError.conflict('HOST_OFFLINE', 'The Host is not connected to this relay right now.')
@@ -169,7 +173,11 @@ export class PairingService {
   }
 
   /** Phone-side decision. */
-  clientConfirm(requestId: string, pairingToken: string, origin: string): {
+  clientConfirm(
+    requestId: string,
+    pairingToken: string,
+    origin: string,
+  ): {
     status: PairingStatus
     cookie: IssuedCookie | null
   } {
@@ -215,7 +223,11 @@ export class PairingService {
   }
 
   /** Poll for the browser while the desktop decides. */
-  poll(requestId: string, pairingToken: string, origin: string): {
+  poll(
+    requestId: string,
+    pairingToken: string,
+    origin: string,
+  ): {
     status: PairingStatus
     cookie: IssuedCookie | null
   } {

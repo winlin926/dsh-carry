@@ -17,7 +17,7 @@ export function registerDiscoveryRoutes(router: Router, services: AppServices): 
     publicKey: nodeIdentity.publicKey,
   }
 
-  router.add('GET', NODE_API.discovery.pattern, ctx => {
+  router.add('GET', NODE_API.discovery.pattern, (ctx) => {
     const descriptor = parseNodeDescriptor({
       protocol: 2,
       kind: 'service',
@@ -29,11 +29,11 @@ export function registerDiscoveryRoutes(router: Router, services: AppServices): 
     sendJson(ctx.res, 200, descriptor, { head: ctx.head, cacheControl: 'no-store' })
   })
 
-  router.add('GET', NODE_API.health.pattern, ctx => {
+  router.add('GET', NODE_API.health.pattern, (ctx) => {
     sendJson(ctx.res, 200, { ok: true, version: config.nodeVersion }, { head: ctx.head })
   })
 
-  router.add('GET', NODE_API.config.pattern, ctx => {
+  router.add('GET', NODE_API.config.pattern, (ctx) => {
     sendJson(
       ctx.res,
       200,
