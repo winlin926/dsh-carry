@@ -118,7 +118,7 @@ export function ServicePairingsSection({
         <div key={pairing.requestId} className="dsrc-device dsrc-row">
           <div className="dsrc-device-main">
             <div className="dsrc-device-name">{pairing.deviceName}</div>
-            <div className="dsrc-muted">{`${text('过期时间', 'Expires')} ${when(pairing.expiresAt)}`}</div>
+            <div className="dsrc-muted">{`${text('过期时间', 'Expires')} ${when(pairing.expiresAt, locale)}`}</div>
           </div>
           <div className="dsrc-actions">
             <button
@@ -172,12 +172,19 @@ export function AuthorizedDevicesSection({ state, disabled, act, locale }: Share
             className="dsrc-button dsrc-danger"
             disabled={disabled}
             onClick={() => {
-              if (confirm(`确定撤销全部 ${state.devices.length} 台设备的授权？所有已授权手机都需要重新配对。`)) {
+              if (
+                confirm(
+                  text(
+                    `确定撤销全部 ${state.devices.length} 台设备的授权？所有已授权手机都需要重新配对。`,
+                    `Revoke authorization for all ${state.devices.length} devices? All paired phones will need to pair again.`,
+                  ),
+                )
+              ) {
                 void act('revokeAll')
               }
             }}
           >
-            撤销全部
+            {text('撤销全部', 'Revoke all')}
           </button>
         ) : null}
       </div>
@@ -194,10 +201,15 @@ export function AuthorizedDevicesSection({ state, disabled, act, locale }: Share
       )}
       {state.repairRequired ? (
         <InlineNotice tone="warn">
-          {`有 ${state.repairRequired} 台设备是通过旧公网入口授权的，升级后已标记为需要重新配对；旧授权不再放行。`}
+          {text(
+            `有 ${state.repairRequired} 台设备是通过旧公网入口授权的，升级后已标记为需要重新配对；旧授权不再放行。`,
+            `${state.repairRequired} device(s) paired through the legacy public entry require re-pairing and are no longer admitted.`,
+          )}
         </InlineNotice>
       ) : null}
-      <p className="dsrc-note">连续 30 天未使用的设备授权会过期。</p>
+      <p className="dsrc-note">
+        {text('连续 30 天未使用的设备授权会过期。', 'Device authorizations expire after 30 days of inactivity.')}
+      </p>
     </section>
   )
 }
@@ -213,6 +225,7 @@ function DeviceRow({
   act: (action: string, fields?: Record<string, unknown>) => Promise<unknown>
   locale?: ClientLocale
 }): React.ReactElement {
+  const text = useText(locale)
   const route = routeName(device.route, locale)
   const [name, setName] = React.useState<string | null>(null)
   const renameInput = React.useRef<HTMLInputElement>(null)
@@ -244,14 +257,16 @@ function DeviceRow({
                 {route}
               </span>
             ) : null}
-            {device.requiresRepair ? <span className="dsrc-tag dsrc-pending">需重新配对</span> : null}
-            {device.online ? <span className="dsrc-tag dsrc-online">在线</span> : null}
+            {device.requiresRepair ? (
+              <span className="dsrc-tag dsrc-pending">{text('需重新配对', 'Re-pair required')}</span>
+            ) : null}
+            {device.online ? <span className="dsrc-tag dsrc-online">{text('在线', 'Online')}</span> : null}
           </div>
         ) : (
           <input
             ref={renameInput}
             className="dsrc-rename"
-            aria-label={`重命名 ${device.name}`}
+            aria-label={text(`重命名 ${device.name}`, `Rename ${device.name}`)}
             maxLength={40}
             value={name}
             onChange={(event) => setName(event.target.value)}
@@ -265,7 +280,12 @@ function DeviceRow({
             }}
           />
         )}
-        <div className="dsrc-device-meta">{`配对于 ${when(device.createdAt)} · 最近使用 ${when(device.lastSeenAt)}`}</div>
+        <div className="dsrc-device-meta">
+          {text(
+            `配对于 ${when(device.createdAt, locale)} · 最近使用 ${when(device.lastSeenAt, locale)}`,
+            `Paired ${when(device.createdAt, locale)} · Last used ${when(device.lastSeenAt, locale)}`,
+          )}
+        </div>
       </div>
       <div className="dsrc-actions">
         <button
@@ -277,19 +297,26 @@ function DeviceRow({
             setName(device.name)
           }}
         >
-          重命名
+          {text('重命名', 'Rename')}
         </button>
         <button
           type="button"
           className="dsrc-button dsrc-danger"
           disabled={disabled}
           onClick={() => {
-            if (confirm(`撤销“${device.name}”的授权？这台设备需要重新扫码配对。`)) {
+            if (
+              confirm(
+                text(
+                  `撤销“${device.name}”的授权？这台设备需要重新扫码配对。`,
+                  `Revoke authorization for "${device.name}"? This device will need to pair again.`,
+                ),
+              )
+            ) {
               void act('revoke', { id: device.id })
             }
           }}
         >
-          撤销授权
+          {text('撤销授权', 'Revoke')}
         </button>
       </div>
     </div>

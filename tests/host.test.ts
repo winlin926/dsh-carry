@@ -660,3 +660,22 @@ it('saves a public domain without implicitly switching modes and resets public m
     const cleared = await command('preferences', { publicUrl: '' })
     expect(cleared).toMatchObject({ mode: 'lan', publicUrl: null })
   }))
+
+it('omits pairing QR codes, tokenized links, and expiry timestamps from remote status payloads', () =>
+  withHost(async (command) => {
+    const remote = await remoteClient(command)
+    const localStatus = await command('status')
+    expect(localStatus.local).toBe(true)
+    expect(localStatus.links.length).toBeGreaterThan(0)
+    expect(localStatus.qr).toMatch(/^data:image\//)
+    expect(localStatus.expiresAt).toEqual(expect.any(Number))
+
+    const remoteStatus = await remote.manage('status')
+    expect(remoteStatus.status).toBe(200)
+    expect(remoteStatus.local).toBe(false)
+    expect(remoteStatus.links).toEqual([])
+    expect(remoteStatus.qr).toBeUndefined()
+    expect(remoteStatus.expiresAt).toBeUndefined()
+    expect('qr' in remoteStatus).toBe(false)
+    expect('expiresAt' in remoteStatus).toBe(false)
+  }))

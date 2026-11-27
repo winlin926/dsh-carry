@@ -439,8 +439,16 @@ describe('command', () => {
 })
 
 describe('panel UX regressions', () => {
-  it('renders public nodes on the local host panel even before public entry is reachable', () => {
-    expect(SOURCE).toContain("{state.local || shown === 'public' ? (")
+  it('keeps QR, pairing links, public nodes, and writable settings strictly on the local host panel', () => {
+    expect(SOURCE).toContain('{state.local ? (')
+    expect(SOURCE).toContain('<PublicNodesSection')
+    expect(SOURCE).toContain('data-section="settings-readonly"')
+    expect(SOURCE).not.toContain("{state.local || shown === 'public' ? (")
+  })
+
+  it('shows self-hosted service-node status in the settings summary and collapses frpc config when no custom domain is set', () => {
+    expect(SOURCE).toContain('isServiceNode && currentNode')
+    expect(SOURCE).toContain('isServiceNode && !publicUrl')
   })
 
   it('opens the tokenized pairing URL instead of bare base and saves domains without switching mode', () => {
@@ -453,5 +461,44 @@ describe('panel UX regressions', () => {
     expect(SOURCE).toContain('state?.serviceNode?.pendingPairings.length')
     expect(SOURCE).toContain('servicePairings?: ServicePairing[]')
     expect(SOURCE).toContain("decision === 'approve' ? 'approveServicePairing' : 'rejectServicePairing'")
+  })
+})
+
+describe('client locale localization', () => {
+  const en = { resolveText: ({ en }: { zh: string; en: string }) => en }
+
+  it('localizes public node validation, metadata, health, and service states when an English locale is given', () => {
+    expect(parsePublicNodeAddress('', en)).toEqual({ ok: false, error: 'Public node URL is required.' })
+    expect(parsePublicNodeAddress('http://node.example.com', en)).toEqual({
+      ok: false,
+      error: 'Public nodes must use https://.',
+    })
+    expect(nodeKindLabel('gateway', en)).toBe('Tunnel gateway')
+    expect(nodeKindLabel('service', en)).toBe('Self-hosted relay')
+    expect(nodeKindLabel(null, en)).toBe('Unverified')
+    expect(nodeFingerprintGroups(null, en)).toBe('Not reported')
+    expect(publicNodeProtocolLabel(1, en)).toBe('Legacy v1 (single host)')
+    expect(publicNodeProtocolLabel(null, en)).toBe('Unknown protocol')
+    expect(nodeCheckStatus({ pending: true, lastCheckAt: null, lastCheckOk: null }, en)).toEqual({
+      label: 'Pending check',
+      tone: 'warn',
+    })
+    expect(nodeCheckStatus({ pending: false, lastCheckAt: 1_700_000_000_000, lastCheckOk: true }, en)).toEqual({
+      label: 'Healthy',
+      tone: 'ok',
+    })
+    expect(checkedAtLabel(null, 1_700_000_000_000, en)).toBe('Never checked')
+    expect(checkedAtLabel(1_699_999_990_000, 1_700_000_000_000, en)).toBe('Just now')
+    expect(checkedAtLabel(1_699_999_700_000, 1_700_000_000_000, en)).toBe('5m ago')
+    expect(serviceStateLabel({ connected: true, lastError: null }, en)).toEqual({
+      label: 'Connected',
+      tone: 'ok',
+      reason: '',
+    })
+    expect(serviceStateLabel({ connected: false, lastError: null }, en)).toEqual({
+      label: 'Connecting…',
+      tone: 'warn',
+      reason: '',
+    })
   })
 })

@@ -838,19 +838,21 @@ export class HostController {
         ? !!serviceTicket && tunnel?.connected === true
         : this.access.lastCheck?.reachable === true)
     const entry = publicReachable ? 'public' : 'lan'
-    const lanLinks = this.lanURLs().map((base) => ({
-      base,
-      url: this.qr ? `${base}/pair#pair=${this.qr.token}` : undefined,
-    }))
+    const lanLinks = local
+      ? this.lanURLs().map((base) => ({
+          base,
+          url: this.qr ? `${base}/pair#pair=${this.qr.token}` : undefined,
+        }))
+      : []
     const publicUrl =
-      publicReachable && publicBase
+      local && publicReachable && publicBase
         ? record?.kind === 'service'
           ? serviceTicket?.url
           : this.qr
             ? `${publicBase}/pair#pair=${this.qr.token}`
             : undefined
         : undefined
-    const links = publicBase && publicUrl ? [{ base: publicBase, url: publicUrl }] : lanLinks
+    const links = !local ? [] : publicBase && publicUrl ? [{ base: publicBase, url: publicUrl }] : lanLinks
     const active = new Set(this.gateway?.onlineIds() ?? [])
     const devices = this.pairing.list()
     const publicNodeList = this.publicNodes?.list() ?? []
@@ -930,9 +932,13 @@ export class HostController {
       version: this.options.nodeVersion,
       gatewayPort: this.gateway?.port ?? 0,
       local,
-      expiresAt: entry === 'public' && record?.kind === 'service' ? serviceTicket?.expiresAt : this.qr?.expiresAt,
+      expiresAt: !local
+        ? undefined
+        : entry === 'public' && record?.kind === 'service'
+          ? serviceTicket?.expiresAt
+          : this.qr?.expiresAt,
       links,
-      qr: links[0]?.url ? await this.qrImage(links[0].url) : undefined,
+      qr: local && links[0]?.url ? await this.qrImage(links[0].url) : undefined,
       requests: local ? this.pairing.requests() : [],
       devices: devices.map(({ host, via: pairedVia, ...device }) => ({
         ...device,

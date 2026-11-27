@@ -392,6 +392,8 @@ describe('panel wiring', () => {
   })
 
   it('hides the update card from the phone: only the local panel renders it', () => {
-    expect(SOURCE).toContain('{state?.local ? <UpdateCard store={update} version={state.version} /> : null}')
+    expect(SOURCE).toContain(
+      '{state?.local ? <UpdateCard store={update} version={state.version} locale={locale} /> : null}',
+    )
   })
 })

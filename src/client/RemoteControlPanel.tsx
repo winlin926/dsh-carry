@@ -42,6 +42,8 @@ export interface PanelProps {
 
 export function RemoteControlPanel({ manager, locale }: PanelProps): React.ReactElement {
   const text = useText(locale)
+  const textRef = React.useRef(text)
+  textRef.current = text
   const runtime = remoteRuntime()
   const remote = React.useSyncExternalStore(
     runtime?.subscribe ?? (() => () => {}),
@@ -82,7 +84,9 @@ export function RemoteControlPanel({ manager, locale }: PanelProps): React.React
       }
     } catch (failure) {
       if (mounted.current && ticket === revision.current) {
-        setStatusError(failure instanceof Error ? failure.message : '状态读取失败。')
+        setStatusError(
+          failure instanceof Error ? failure.message : textRef.current('状态读取失败。', 'Failed to read status.'),
+        )
       }
     } finally {
       pending.current = false
@@ -126,9 +130,24 @@ export function RemoteControlPanel({ manager, locale }: PanelProps): React.React
     try {
       const data = await command({ action, ...fields })
       if (data.links) setState(data)
-      if (action === 'certificate') setNotice('证书申请或续期已开始，状态会自动更新。')
-      else if (action === 'reloadLanCertificate') setNotice('局域网 HTTPS 证书已重载，新连接将使用更新后的证书。')
-      else if (action === 'switch') setNotice('已提交切换，当前访问即将断开。请使用新入口重新连接。')
+      if (action === 'certificate')
+        setNotice(
+          text('证书申请或续期已开始，状态会自动更新。', 'Certificate request started; status updates automatically.'),
+        )
+      else if (action === 'reloadLanCertificate')
+        setNotice(
+          text(
+            '局域网 HTTPS 证书已重载，新连接将使用更新后的证书。',
+            'LAN HTTPS certificate reloaded for new connections.',
+          ),
+        )
+      else if (action === 'switch')
+        setNotice(
+          text(
+            '已提交切换，当前访问即将断开。请使用新入口重新连接。',
+            'Switch queued; reconnect through the new entry.',
+          ),
+        )
       else if (action === 'stop') {
         setState((previous) =>
           previous
@@ -160,19 +179,24 @@ export function RemoteControlPanel({ manager, locale }: PanelProps): React.React
           void refresh()
         }, 200)
       } else if (action === 'addPublicNode') {
-        setNotice('公网节点已添加并通过检测。')
+        setNotice(text('公网节点已添加并通过检测。', 'Public node added and verified.'))
         setTimeout(() => {
           void refresh()
         }, 200)
       } else if (action === 'setCurrentPublicNode') {
-        setNotice('已切换当前使用的公网节点。')
+        setNotice(text('已切换当前使用的公网节点。', 'Switched current public node.'))
       } else if (action === 'confirmPublicNodeIdentity') {
-        setNotice('节点身份已确认，正在重新检测。')
+        setNotice(text('节点身份已确认，正在重新检测。', 'Node identity confirmed; probing again.'))
         setTimeout(() => {
           void refresh()
         }, 200)
       } else if (action === 'removePublicNode') {
-        setNotice('公网节点已删除，通过它的设备授权已撤销。')
+        setNotice(
+          text(
+            '公网节点已删除，通过它的设备授权已撤销。',
+            'Public node removed and its authorized devices were revoked.',
+          ),
+        )
       } else if (action === 'approveServicePairing') {
         setNotice(
           text('设备已确认，可以通过该节点继续连接。', 'Device approved. It can now connect through this node.'),
@@ -182,7 +206,7 @@ export function RemoteControlPanel({ manager, locale }: PanelProps): React.React
       }
       return true
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : '操作失败。')
+      setError(failure instanceof Error ? failure.message : text('操作失败。', 'Action failed.'))
       // The Host records a failed probe too, so show the refreshed row even though the call failed.
       if (action === 'addPublicNode' || action === 'checkPublicNode') {
         setTimeout(() => {
@@ -244,7 +268,16 @@ export function RemoteControlPanel({ manager, locale }: PanelProps): React.React
   const renewing = React.useRef(false)
   const pendingPairingsCount = (state?.requests.length ?? 0) + (state?.serviceNode?.pendingPairings.length ?? 0)
   React.useEffect(() => {
-    if (!state?.enabled || !expired || state.busy || acting.current || renewing.current || pendingPairingsCount) return
+    if (
+      !state?.local ||
+      !state.enabled ||
+      !expired ||
+      state.busy ||
+      acting.current ||
+      renewing.current ||
+      pendingPairingsCount
+    )
+      return
     renewing.current = true
     const ticket = ++revision.current
     void command({ action: 'refresh' })
@@ -365,14 +398,14 @@ export function RemoteControlPanel({ manager, locale }: PanelProps): React.React
   const certificate = state?.certificate
   const certificateExpired = !!certificate?.expiresAt && certificate.expiresAt <= Date.now()
   const settingsIssue = domainBlocked
-    ? '需配置公网域名'
+    ? text('需配置公网域名', 'Domain required')
     : shown === 'public' && currentNode?.kind !== 'service' && (certificate?.error || certificateExpired)
-      ? '证书需处理'
+      ? text('证书需处理', 'Certificate issue')
       : shown === 'public' &&
           currentNode?.kind !== 'service' &&
           state?.publicUrlCheck &&
           !state.publicUrlCheck.reachable
-        ? '公网检测未通过'
+        ? text('公网检测未通过', 'Public check failed')
         : ''
 
   return (
@@ -455,7 +488,7 @@ export function RemoteControlPanel({ manager, locale }: PanelProps): React.React
             copy={copy}
             act={act}
           />
-          {state?.local ? <UpdateCard store={update} version={state.version} /> : null}
+          {state?.local ? <UpdateCard store={update} version={state.version} locale={locale} /> : null}
         </div>
         <div className="dsrc-col dsrc-col-rail">
           {state ? <PairingRequestsSection state={state} disabled={disabled} act={act} locale={locale} /> : null}
@@ -482,6 +515,7 @@ export function RemoteControlPanel({ manager, locale }: PanelProps): React.React
               workingAction={workingAction}
               setPublicEnabled={setPublicEnabled}
               act={act}
+              locale={locale}
             />
           ) : null}
         </div>

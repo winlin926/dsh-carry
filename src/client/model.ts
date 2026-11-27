@@ -293,8 +293,13 @@ export function routeName(route: RemoteSnapshot['route'], locale?: ClientLocale)
   if (route === 'direct') return clientText(locale, 'WebRTC 直连', 'Direct (WebRTC)')
   if (route === 'public') return clientText(locale, '公网转发', 'Public relay')
 }
-export const when = (time: number) =>
-  new Date(time).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+export const when = (time: number, locale?: Pick<ClientLocale, 'resolveText'>): string =>
+  new Date(time).toLocaleString(clientText(locale, 'zh-CN', 'en-US') === 'en-US' ? 'en-US' : 'zh-CN', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 export const address = (value: string) => {
   try {
     const url = new URL(value)
@@ -305,19 +310,41 @@ export const address = (value: string) => {
 }
 export type PublicNodeAddress = { ok: true; url: string } | { ok: false; error: string }
 /** Mirrors the Host's rule so a malformed draft never reaches the manage API. */
-export function parsePublicNodeAddress(value: string): PublicNodeAddress {
+export function parsePublicNodeAddress(value: string, locale?: Pick<ClientLocale, 'resolveText'>): PublicNodeAddress {
   const text = value.trim()
-  if (!text) return { ok: false, error: '公网节点地址不能为空。' }
+  if (!text) return { ok: false, error: clientText(locale, '公网节点地址不能为空。', 'Public node URL is required.') }
   let url: URL
   try {
     url = new URL(text)
   } catch {
-    return { ok: false, error: '公网节点地址格式无效，请填写完整的 https:// 地址。' }
+    return {
+      ok: false,
+      error: clientText(locale, '公网节点地址格式无效，请填写完整的 https:// 地址。', 'Enter a valid https:// URL.'),
+    }
   }
-  if (url.protocol !== 'https:') return { ok: false, error: '公网节点必须使用 https:// 地址。' }
-  if (url.username || url.password) return { ok: false, error: '公网节点地址不能包含账号或密码。' }
+  if (url.protocol !== 'https:')
+    return {
+      ok: false,
+      error: clientText(locale, '公网节点必须使用 https:// 地址。', 'Public nodes must use https://.'),
+    }
+  if (url.username || url.password)
+    return {
+      ok: false,
+      error: clientText(
+        locale,
+        '公网节点地址不能包含账号或密码。',
+        'Public node URL cannot include a username or password.',
+      ),
+    }
   if (url.pathname !== '/' || url.search || url.hash)
-    return { ok: false, error: '公网节点地址只能是域名，不能带路径、查询参数或锚点。' }
+    return {
+      ok: false,
+      error: clientText(
+        locale,
+        '公网节点地址只能是域名，不能带路径、查询参数或锚点。',
+        'Public node URL must be an origin only (no path, query, or hash).',
+      ),
+    }
   return { ok: true, url: url.origin }
 }
 /** Host[:port] is the shortest unique label for buttons and confirmations. */
@@ -328,12 +355,14 @@ export function nodeHost(url: string): string {
     return url
   }
 }
-export function nodeKindLabel(kind: PublicNodeKind | null): string {
-  return kind === 'gateway' ? '隧道网关' : kind === 'service' ? '自托管服务' : '待确认'
+export function nodeKindLabel(kind: PublicNodeKind | null, locale?: Pick<ClientLocale, 'resolveText'>): string {
+  if (kind === 'gateway') return clientText(locale, '隧道网关', 'Tunnel gateway')
+  if (kind === 'service') return clientText(locale, '自托管服务', 'Self-hosted relay')
+  return clientText(locale, '待确认', 'Unverified')
 }
 /** The Host shows fingerprints as eight upper-case groups of four digits. */
-export function nodeFingerprintGroups(fingerprint: string | null): string {
-  if (!fingerprint) return '尚未上报'
+export function nodeFingerprintGroups(fingerprint: string | null, locale?: Pick<ClientLocale, 'resolveText'>): string {
+  if (!fingerprint) return clientText(locale, '尚未上报', 'Not reported')
   const digits = fingerprint.replace(/[^0-9a-f]/gi, '').toUpperCase()
   if (digits.length !== 32) return fingerprint.toUpperCase()
   return digits.match(/.{4}/g)!.join('-')
@@ -344,26 +373,46 @@ export function publicNodeFingerprint(node: Pick<PublicNode, 'node' | 'fingerpri
   return node.node?.fingerprint ?? node.fingerprint
 }
 /** The protocol tag tells a v2 node apart from a v1 single-host gateway without opening the row. */
-export function publicNodeProtocolLabel(protocol: number | null): string {
-  return protocol === 2 ? 'v2' : protocol === 1 ? '旧版 v1（单主机）' : '协议待确认'
+export function publicNodeProtocolLabel(protocol: number | null, locale?: Pick<ClientLocale, 'resolveText'>): string {
+  if (protocol === 2) return 'v2'
+  if (protocol === 1) return clientText(locale, '旧版 v1（单主机）', 'Legacy v1 (single host)')
+  return clientText(locale, '协议待确认', 'Unknown protocol')
 }
-export function nodeCheckStatus(node: Pick<PublicNode, 'pending' | 'lastCheckAt' | 'lastCheckOk'>): {
+export function nodeCheckStatus(
+  node: Pick<PublicNode, 'pending' | 'lastCheckAt' | 'lastCheckOk'>,
+  locale?: Pick<ClientLocale, 'resolveText'>,
+): {
   label: string
   tone: NodeTone
 } {
-  if (node.pending) return { label: '待检测确认', tone: 'warn' }
-  if (node.lastCheckAt === null) return { label: '尚未检测', tone: 'neutral' }
-  return node.lastCheckOk ? { label: '检测正常', tone: 'ok' } : { label: '检测失败', tone: 'danger' }
+  if (node.pending) return { label: clientText(locale, '待检测确认', 'Pending check'), tone: 'warn' }
+  if (node.lastCheckAt === null) return { label: clientText(locale, '尚未检测', 'Not checked'), tone: 'neutral' }
+  return node.lastCheckOk
+    ? { label: clientText(locale, '检测正常', 'Healthy'), tone: 'ok' }
+    : { label: clientText(locale, '检测失败', 'Check failed'), tone: 'danger' }
 }
 /** Relative wording keeps the list scannable; old probes fall back to the panel's absolute form. */
-export function checkedAtLabel(at: number | null, now = Date.now()): string {
-  if (at === null) return '尚未检测'
+export function checkedAtLabel(
+  at: number | null,
+  now = Date.now(),
+  locale?: Pick<ClientLocale, 'resolveText'>,
+): string {
+  if (at === null) return clientText(locale, '尚未检测', 'Never checked')
   const elapsed = Math.max(0, now - at)
-  if (elapsed < 60_000) return '刚刚'
-  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)} 分钟前`
-  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)} 小时前`
-  if (elapsed < 7 * 86_400_000) return `${Math.floor(elapsed / 86_400_000)} 天前`
-  return when(at)
+  if (elapsed < 60_000) return clientText(locale, '刚刚', 'Just now')
+  if (elapsed < 3_600_000) {
+    const mins = Math.floor(elapsed / 60_000)
+    return clientText(locale, `${mins} 分钟前`, `${mins}m ago`)
+  }
+  if (elapsed < 86_400_000) {
+    const hours = Math.floor(elapsed / 3_600_000)
+    return clientText(locale, `${hours} 小时前`, `${hours}h ago`)
+  }
+  if (elapsed < 7 * 86_400_000) {
+    const days = Math.floor(elapsed / 86_400_000)
+    return clientText(locale, `${days} 天前`, `${days}d ago`)
+  }
+  return when(at, locale)
 }
 /** The current entry first, then entries awaiting confirmation, then the most recently probed. */
 export function sortPublicNodes(nodes: readonly PublicNode[], current: string | null): PublicNode[] {
@@ -376,12 +425,16 @@ export function sortPublicNodes(nodes: readonly PublicNode[], current: string | 
       left.url.localeCompare(right.url),
   )
 }
-export function serviceStateLabel(service: Pick<ServiceNodeState, 'connected' | 'lastError'>): {
+export function serviceStateLabel(
+  service: Pick<ServiceNodeState, 'connected' | 'lastError'>,
+  locale?: Pick<ClientLocale, 'resolveText'>,
+): {
   label: string
   tone: NodeTone
   reason: string
 } {
-  if (service.connected) return { label: '已连接', tone: 'ok', reason: '' }
-  if (service.lastError) return { label: '未连接', tone: 'danger', reason: service.lastError }
-  return { label: '正在连接…', tone: 'warn', reason: '' }
+  if (service.connected) return { label: clientText(locale, '已连接', 'Connected'), tone: 'ok', reason: '' }
+  if (service.lastError)
+    return { label: clientText(locale, '未连接', 'Disconnected'), tone: 'danger', reason: service.lastError }
+  return { label: clientText(locale, '正在连接…', 'Connecting…'), tone: 'warn', reason: '' }
 }
