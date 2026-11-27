@@ -6,6 +6,11 @@ test-results/
 package-manifest.json
 .mnemon/
 .agents/
+.mimosa/
+.cursor/
+.codex/
+.claude/
+.gemini/
 agentworkrecords/
 AGENTS.md
 CLAUDE.md
