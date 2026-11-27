@@ -5,7 +5,6 @@
   <img src="https://img.shields.io/static/v1?label=DSH&message=Plugin&color=8B4A38" height="20" alt="DSH | Plugin" />
   <a href="https://github.com/winlin926/dsh-carry/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/winlin926/dsh-carry/ci.yml?branch=main&label=build" height="20" alt="build" /></a>
   <a href="https://www.npmjs.com/package/@winlin926/dsh-carry"><img src="https://img.shields.io/npm/v/@winlin926/dsh-carry?label=npm" height="20" alt="npm" /></a>
-  <a href="https://github.com/winlin926/dsh-carry/actions/workflows/ci.yml"><img src="https://img.shields.io/static/v1?label=tests&message=372%20passing&color=2ea44f" height="20" alt="372 tests passing" /></a>
   <a href="https://github.com/winlin926/dsh-carry/blob/main/package.json"><img src="https://img.shields.io/node/v/@winlin926/dsh-carry?label=node" height="20" alt="node" /></a>
   <a href="https://github.com/winlin926/dsh-carry/blob/main/LICENSE"><img src="https://img.shields.io/github/license/winlin926/dsh-carry?label=license" height="20" alt="license" /></a>
 </p>
@@ -13,7 +12,7 @@
   简体中文 · <a href="https://github.com/winlin926/dsh-carry/blob/main/README.en.md">English</a>
 </p>
 
-　　`dsh-carry` 让你通过手机浏览器远程使用电脑上运行的 DeepSeek Harness（DSH）。扫码配对后，可以继续会话、审批工具请求，并查看工作区文件或 HTML 预览。手机连接的是电脑上的 DSH 实例，可用会话和工具由宿主提供。
+`dsh-carry` 是 DeepSeek Harness（DSH）的远程控制插件。扫码配对后，你可以直接用手机浏览器接入电脑上正在运行的 DSH 实例，继续对话、审批工具请求、查看工作区文件或预览 HTML 页面；可用会话、模型与工具完全由电脑宿主提供。
 
 <details>
 <summary><strong>查看实机录屏（26 秒 GIF）：回答提问卡片、查看工具输出、打开 HTML 预览</strong></summary>
@@ -24,17 +23,24 @@
 
 ## 📦 安装与首次连接
 
-　　在要远程访问的电脑上安装插件。**桌面版**在 DSH 的「插件 → 添加插件」中搜索 `@winlin926/dsh-carry`。**使用 `dsh web`** 时，运行：
+> 运行环境要求：Node.js `>= 24.9.0`，DSH `>= 0.2.2-rc.1`（`< 0.3.0`）。
+
+在需要被远程访问的电脑上安装插件：
+
+- **DSH 桌面版**：打开「插件 → 添加插件」，搜索 `@winlin926/dsh-carry` 安装。
+- **DSH CLI / `dsh web`**：运行以下命令安装（将 `<profile>` 替换为你的配置名称，例如 `web`），安装后重启或重载宿主：
 
 ```sh
-dsh plugin --profile web add @winlin926/dsh-carry@latest
+dsh plugin --profile <profile> add @winlin926/dsh-carry@latest
 ```
 
-1. 在电脑的 DSH 侧栏打开「远程控制」，点击「开启远程连接」。首次使用，让手机和电脑连接同一个 Wi‑Fi。
-2. 用手机扫描面板上的二维码。在电脑上核对设备名称，点击「允许连接」。
-3. 在手机浏览器中打开已有会话。以后可以在电脑的「已授权设备」列表中撤销该手机。
+首次连接只需三步：
 
-需要在外面用手机连接时，再看下方的[公网连接说明](#-离开同一-wi-fi-后怎么连)。
+1. 在电脑端 DSH 侧栏打开「远程控制」，点击「开启远程连接」（首次配对请确保手机与电脑处于同一 Wi‑Fi）。
+2. 用手机扫描面板上的二维码，在电脑弹出的确认框核对设备名后点击「允许连接」。
+3. 配对完成后即可在手机浏览器中继续已有会话；之后可随时在电脑「已授权设备」列表中重命名或撤销任意设备。
+
+需要在外出或跨网络环境下连接，请参考下方的[公网连接说明](#-离开同一-wi-fi-后怎么连)。
 
 <details>
 <summary><strong>查看插件面板截图</strong></summary>
@@ -46,10 +52,11 @@ dsh plugin --profile web add @winlin926/dsh-carry@latest
 ## 📱 手机上能做什么
 
 <table align="center">
-  <tr><th>场景</th><th>在手机上操作</th></tr>
-  <tr><td>离开工位，任务还在跑</td><td>打开电脑上的会话，查看回复，继续发消息。</td></tr>
-  <tr><td>工具请求正在等你确认</td><td>在宿主界面里查看请求，决定是否批准。</td></tr>
-  <tr><td>想看刚生成的文件</td><td>点开工作区文件链接，在浏览器中查看文件或预览 HTML 页面。</td></tr>
+  <tr><th>使用场景</th><th>在手机上的能力</th></tr>
+  <tr><td>离开工位，长任务仍在运行</td><td>打开电脑上的会话，实时查看回复并继续发送后续指令。</td></tr>
+  <tr><td>工具请求正在等待授权</td><td>直接在宿主同步界面中审查详情并决定是否批准执行。</td></tr>
+  <tr><td>需要核对生成产物或网页</td><td>点击工作区文件链接下载查看（最大 48 MiB），或直接预览 HTML 页面。</td></tr>
+  <tr><td>同时配置了公网与局域网</td><td>公网访问且同处局域网时自动建立 WebRTC 直连，主线波动时无感切换、无需重新扫码。</td></tr>
 </table>
 
 <p align="center">
@@ -68,14 +75,17 @@ dsh plugin --profile web add @winlin926/dsh-carry@latest
 
 ## 🌐 离开同一 Wi-Fi 后怎么连？
 
-　　从购买域名、创建隧道到手机验证，请参阅 [SakuraFrp 公网连接教程](docs/public-access-sakura.md)。
+从域名配置、内网穿透到手机端验证的完整步骤，请参阅 [SakuraFrp 公网连接教程](docs/public-access-sakura.md)；如果你有自己的云服务器，也可以部署仓库内置的 [`remote-server`](docs/self-host.md) 反向隧道中继节点（电脑端无需开放任何入站端口）。
 
-　　配好固定域名的 HTTPS 隧道网关（或自行部署仓库里的 `remote-server` 中继节点）后，公网入口与局域网入口同时由一个监听提供，二维码指向你选的优先级。手机在同一网络时公网链路一旦断开，会自动换到局域网入口，不需要重新扫码；反过来离开网络时，请打开面板里给出的公网地址。公网配对时，在手机与电脑上核对主机指纹，确认连接的是自己的电脑。
+- **单码融合入口**：配置好固定域名隧道网关或自托管节点后，公网与局域网共用同一个二维码，默认「局域网优先」，也可在设置中改选「公网优先」。
+- **双线路自动容灾**：同一局域网下即使从公网入口打开，插件也会在后台预建 WebRTC 局域网直连；公网线路中断时自动切换，无需重新扫码。离开局域网时，直接打开面板显示的公网地址即可接入。
+- **主机指纹校验**：通过公网首次配对时，手机与电脑会各自显示并核对主机指纹，确认连接到的是你自己的电脑。
 
-　　**🔒 只批准你信任的设备。** 已配对的手机拥有接近本机的操作权限。公网节点会终止 TLS，运营者可以看到转发内容。这条链路没有端到端加密，请使用自己部署或信任的节点。项目不运营公共节点。
+> **🔒 安全与信任边界：只批准你信任的设备。**
+> 已配对手机拥有接近本机操作 DSH 的权限。公网中继节点或内网穿透服务会终止 TLS 并转发请求，节点运营者可能看到传输内容；本插件不提供节点之上的端到端加密，项目方也不托管任何公共节点。请仅使用自己部署或明确信任的公网节点。
 
-[自托管部署指南](docs/self-host.md) · [公网节点协议](docs/public-node.md) · [插件能力与宿主接口](docs/features.md)
+进一步阅读：[自托管部署指南](docs/self-host.md) · [公网节点协议](docs/public-node.md) · [插件能力与宿主接口](docs/features.md) · [测试指南](docs/verification.md) · [发布说明](docs/release-notes.md)
 
 ## 📄 致谢与许可
 
-　　感谢 [copylee711/dsh-remote-control](https://github.com/copylee711/dsh-remote-control) 的早期实现。MIT 许可，版权声明见 [LICENSE](LICENSE)。
+感谢 [copylee711/dsh-remote-control](https://github.com/copylee711/dsh-remote-control) 的早期实现。本项目以 MIT 协议开源，版权声明见 [LICENSE](LICENSE)。

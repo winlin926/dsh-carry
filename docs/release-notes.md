@@ -1,37 +1,32 @@
-# v0.7.1 — 手机连接与传文件更顺畅
+# v0.7.2
 
-## 体验优化
+围绕自托管中继隧道大包分片、配对完成通知以及公网节点切换与边界加固，并完成工程化与代码规范整理（待同步 `package.json` 版本号至 `0.7.2` 后发布）。
 
-[1] 优化了手机端的请求。手机停止轮询由电脑处理的配对审批，电脑端仍会显示审批提醒。
+## 优化与变更
 
-[2] 优化了同源写入前的线路检测。短时间内的连续操作可以复用已通过的检测结果，切换网络后会重新确认线路。
+- 优化了工程目录与共享契约边界：锁定 `src/remote/` 为唯一纯契约目录并加入自动架构守卫测试，同时将客户端面板迁移至 React JSX、将 `boot` 脚本改为独立编译的浏览器 IIFE 产物，并拆分 Host 控制层与隧道代理大文件以提升可维护性。
+- 优化了代码质量保障：接入 Biome 格式化与静态检查并纳入 CI 门禁。
+- 优化了多宿主并发访问防护与远端管理权限边界：禁止通过远程会话调用添加、检测、切换或删除公网节点等仅限本机的敏感操作。
 
-[3] 优化了 WebRTC 直连的文件传输。上传和下载分块进行，发送队列拥堵时暂停，腾出空间后继续；取消单个文件时，聊天连接仍可使用。
+## 修复
 
-[4] 优化了手机切回前台时的连接恢复。等待重试的会话可以在原页面继续连接，重连提示会在 DSH 会话就绪后消失。
+- 修复了经由自托管中继隧道传输超过帧长度上限的 WebSocket 大消息时直接断连的问题，现会在两端自动按分片传输并安全重组。
+- 修复了自托管中继配对双方先后批准时可能漏发或重复发送 `pair.complete` 通知的问题，确保配对完成事件精确投递一次。
+- 修复了切换至自托管节点时仍残留旧网关固定公网域名、以及删除当前正在使用的网关节点时未自动停止公网连接并清理域名的问题。
+- 修复了使用自托管节点时设置面板仍错误检查并提示网关证书或域名错误的问题，并修复了切换回局域网模式或停用连接时未彻底清理 `lanTls` 状态的问题。
+- 修复了 `remote-server` Docker 构建上下文遗漏 `src/remote/node-api.ts` 导致镜像编译失败的问题。
 
-[5] 优化了普通文件的打开体验。点击后立即显示下载进度，可以单独取消；浏览器拦截弹窗时，预览留在聊天页内。
-
-[6] 优化了启动和首次连接体验。回访或启用「减少动态效果」时，工作区就绪后会立即收起启动画面。中英文入门说明从「连接同一 Wi-Fi、扫码、在电脑上确认」开始。
-
-[7] 优化了连接诊断信息。复制的摘要分别记录页面入口和当前会话线路，不包含地址、凭据或设备标识。
-
-## 问题修复
-
-[1] 修复了手机时钟与服务端不一致时，有效配对请求被提前判为过期的问题。
-
-[2] 修复了自托管中继首次读取配置遇到短暂断网后需要重新扫码的问题。现在可以在原页面重试。
-
-[3] 修复了自托管中继配对页误判有效主机公钥的问题，并为网络中断、二维码失效和配对被拒绝提供了不同提示。
-
-[4] 修复了自托管中继的设备授权失效后，手机仍一直提示重连的问题。现在会引导用户重新扫码。
-
-[5] 修复了浏览器拦截弹窗时，连续打开文件会累积预览和下载数据的问题。聊天页只保留最近打开的一份预览。
-
-## 升级
+## 升级与兼容性
 
 ```powershell
-dsh plugin --profile <你的 profile> add @winlin926/dsh-carry@0.7.1
+dsh plugin --profile <profile> add @winlin926/dsh-carry@0.7.2
 ```
 
-也可以在 DSH 插件页更新，更新后重启宿主。使用自托管公网节点的用户请同时升级 `remote-server`，以应用中继配对页和服务端的修复。
+- 也可直接在 DSH 插件页更新，更新后需重启 DSH 宿主以使服务端插件逻辑生效；已配对的手机、公网节点记录和既有设置继续保留，无需重新扫码。
+- **自托管公网节点用户**：请同步升级仓库内的 `remote-server`，以获得 WebSocket 大消息分片重组与 `pair.complete` 单次精确投递修复。
+
+## English Summary
+
+- **Added architectural guardrails & modularization**: Locked `src/remote/` as a pure shared contract directory enforced by tests, integrated Biome lint/format into CI, compiled the browser boot script via tsdown IIFE, and modularized Host controllers, React JSX panel components, and tunnel proxies.
+- **Fixed oversized WebSocket frames over relay tunnels**: Large WebSocket messages are now fragmented and reassembled safely on both ends instead of breaking the tunnel.
+- **Fixed relay pairing notifications & host node switching**: Guaranteed single delivery of `pair.complete`, prevented stale gateway domains/TLS states during node switches or deletions, blocked non-local public-node management actions, and fixed `remote-server` Docker build context omissions.
