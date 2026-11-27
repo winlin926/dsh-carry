@@ -9,7 +9,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const expected = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 const server = JSON.parse(readFileSync(join(root, 'remote-server', 'package.json'), 'utf8'))
 if (server.version !== expected.version) throw new Error('Plugin and service-node versions must match')
-const entries = ['lib/index.js', 'lib/client.js']
+const entries = ['lib/index.js', 'lib/client.js', 'lib/boot.js']
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex')
 
 function checkFiles(paths) {
@@ -41,12 +41,12 @@ function checkFiles(paths) {
       !/^lib\/types\/.+\.d\.ts$/.test(path)
     )
       throw new Error(`Unexpected package file: ${path}`)
-    if (
-      path.startsWith('lib/types/') &&
-      path.endsWith('.d.ts') &&
-      !existsSync(join(root, path.replace('lib/types/', 'src/').replace(/\.d\.ts$/, '.ts')))
-    )
-      throw new Error(`Declaration without source: ${path}`)
+    if (path.startsWith('lib/types/') && path.endsWith('.d.ts')) {
+      const stem = join(root, path.replace('lib/types/', 'src/').replace(/\.d\.ts$/, ''))
+      if (!existsSync(`${stem}.ts`) && !existsSync(`${stem}.tsx`)) {
+        throw new Error(`Declaration without source: ${path}`)
+      }
+    }
   }
   if (Object.keys(expected.dependencies).includes('dsh-web-frontend'))
     throw new Error('The package must not ship its own copy of the DSH frontend')

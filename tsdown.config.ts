@@ -1,4 +1,19 @@
 import type { UserConfig } from 'tsdown'
+
+export const bootConfig: UserConfig = {
+  entry: { boot: 'src/boot/entry.ts' },
+  outDir: 'lib',
+  format: 'iife',
+  platform: 'browser',
+  target: 'es2022',
+  clean: false,
+  dts: false,
+  fixedExtension: false,
+  globalName: '__dshBootBundle',
+  deps: { onlyBundle: false },
+  outputOptions: { entryFileNames: 'boot.js', codeSplitting: false },
+}
+
 const host: UserConfig = {
   entry: ['lib/types/index.js'],
   outDir: 'lib',
@@ -13,6 +28,7 @@ const host: UserConfig = {
     onlyBundle: false,
   },
 }
+
 const client: UserConfig = {
   entry: { client: 'lib/types/client/index.js' },
   outDir: 'lib',
@@ -21,6 +37,7 @@ const client: UserConfig = {
   target: 'es2022',
   clean: false,
   dts: false,
+  fixedExtension: false,
   deps: { neverBundle: ['react', 'react/jsx-runtime'], onlyBundle: false },
   define: { 'process.env.NODE_ENV': JSON.stringify('production') },
   outputOptions: {
@@ -30,4 +47,5 @@ const client: UserConfig = {
     footer: 'return module.exports; } });',
   },
 }
-export default [host, client]
+
+export default [host, client, bootConfig]

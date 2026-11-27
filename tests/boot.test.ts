@@ -1,5 +1,4 @@
 import { expect, it, vi } from 'vitest'
-import { remoteDirect } from '../src/boot-direct.js'
 import { BOOT_PATH, bootScript, injectBoot, type BootContext } from '../src/boot.js'
 import { localFilePath } from '../src/local-file.js'
 import type { ConnectionFace, RemoteRuntime } from '../src/remote-runtime.js'
@@ -240,6 +239,7 @@ function bootPage(
     __DSH_BOOT__: session.boot,
     __ModuleLoader__: session.loader,
     localStorage: session.store,
+    ...(session.link ? { __DSH_TEST_DIRECT__: session.link } : {}),
     matchMedia: (query: string) => ({
       matches: query === '(prefers-reduced-motion: reduce)' && !!session.reducedMotion,
     }),
@@ -313,8 +313,7 @@ function bootPage(
     'innerHeight',
     'devicePixelRatio',
     'performance',
-    'testLink',
-    session.link ? script.replace(remoteDirect.toString(), '(() => testLink)') : script,
+    script,
   )(
     window,
     document,
@@ -333,7 +332,6 @@ function bootPage(
     844,
     1,
     { now: () => clock.now },
-    session.link,
   )
   /** Run every timer that is due, in order, including the ones a run schedules. */
   const advance = (ms: number): void => {
