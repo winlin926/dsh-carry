@@ -14,11 +14,16 @@ import {
 
 const NAME = '@winlin926/dsh-carry'
 const CLIENT_DIR = new URL('../src/client/', import.meta.url)
-const SOURCE = readdirSync(CLIENT_DIR)
-  .filter((name) => name.endsWith('.ts'))
-  .sort()
-  .map((name) => readFileSync(new URL(name, CLIENT_DIR), 'utf8'))
-  .join('\n')
+function collectClientSource(dir: URL): string {
+  const chunks: string[] = []
+  for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const next = new URL(entry.name + (entry.isDirectory() ? '/' : ''), dir)
+    if (entry.isDirectory()) chunks.push(collectClientSource(next))
+    else if (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) chunks.push(readFileSync(next, 'utf8'))
+  }
+  return chunks.join('\n')
+}
+const SOURCE = collectClientSource(CLIENT_DIR)
 const bundle = (overrides: Partial<UpdateBundle> = {}): UpdateBundle => ({
   name: NAME,
   installed: true,
@@ -387,7 +392,6 @@ describe('panel wiring', () => {
   })
 
   it('hides the update card from the phone: only the local panel renders it', () => {
-    expect(SOURCE).toContain('if (!state?.local) return null')
-    expect(SOURCE).toContain('updateSection()')
+    expect(SOURCE).toContain('{state?.local ? <UpdateCard store={update} version={state.version} /> : null}')
   })
 })

@@ -22,11 +22,16 @@ import {
 import type { PublicNode } from '../src/client/index.js'
 
 const CLIENT_DIR = new URL('../src/client/', import.meta.url)
-const SOURCE = readdirSync(CLIENT_DIR)
-  .filter((name) => name.endsWith('.ts'))
-  .sort()
-  .map((name) => readFileSync(new URL(name, CLIENT_DIR), 'utf8'))
-  .join('\n')
+function collectClientSource(dir: URL): string {
+  const chunks: string[] = []
+  for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const next = new URL(entry.name + (entry.isDirectory() ? '/' : ''), dir)
+    if (entry.isDirectory()) chunks.push(collectClientSource(next))
+    else if (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) chunks.push(readFileSync(next, 'utf8'))
+  }
+  return chunks.join('\n')
+}
+const SOURCE = collectClientSource(CLIENT_DIR)
 const FINGERPRINT = 'e5029063f54829c639dac06e7a3de8cd'
 const OTHER_FINGERPRINT = '0f1e2d3c4b5a69788796a5b4c3d2e1f0'
 const makeNode = (overrides: Partial<PublicNode> = {}): PublicNode => ({
@@ -286,7 +291,7 @@ describe('public node identity copy', () => {
 
   it('cannot set a node with a pending identity change as the current one', () => {
     expect(SOURCE).toContain('需先确认身份')
-    expect(SOURCE).toContain('disabled: manageDisabled || current || !!change')
+    expect(SOURCE).toContain('disabled={manageDisabled || current || !!change}')
   })
 })
 

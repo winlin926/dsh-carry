@@ -168,7 +168,7 @@ export const CSS = `
 .dsrc-check input{width:16px;height:16px;flex:none;margin:2px 0 0;accent-color:var(--rc-accent)}
 .dsrc-check-copy{display:block;min-width:0}
 .dsrc-check .dsrc-note{margin-top:3px!important}
-.dsrc-mode{display:inline-flex;gap:2px;max-width:100%;padding:3px;border-radius:9px;background:var(--rc-fill)}
+.dsrc-mode{display:inline-flex;gap:2px;max-width:100%;min-width:0;margin:0;border:0;padding:3px;border-radius:9px;background:var(--rc-fill)}
 .dsrc-mode button{border:0;background:transparent;color:var(--rc-muted);border-radius:7px;min-height:30px;padding:3px 12px;font-size:12px;white-space:nowrap}
 .dsrc-mode button[aria-pressed=true]{background:var(--rc-paper);color:var(--rc-indigo);font-weight:650;box-shadow:0 1px 3px #202b4a1a}
 .dsrc-proxy-field{margin-top:10px}
@@ -188,7 +188,7 @@ export const CSS = `
 .dsrc-service-state[data-tone=danger] strong{color:var(--rc-danger)}
 .dsrc-service-reason{flex:1 1 100%;min-width:0;color:var(--rc-danger);overflow-wrap:anywhere}
 .dsrc-service-origin{flex:1 1 100%;min-width:0;font:11px/18px ui-monospace,Consolas,monospace;overflow-wrap:anywhere;word-break:break-all}
-.dsrc-node-list{display:flex;flex-direction:column;min-width:0;margin-top:6px}
+.dsrc-node-list{display:flex;flex-direction:column;min-width:0;list-style:none;margin:6px 0 0;padding:0}
 .dsrc-node{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:6px 12px;min-width:0;padding:10px 0;border-top:1px solid var(--rc-line)}
 .dsrc-node-main{flex:1 1 200px;min-width:0}
 .dsrc-node-title{display:flex;align-items:center;flex-wrap:wrap;gap:5px 6px;min-width:0}

@@ -1,6 +1,8 @@
 import type { ConnectionFace, RemoteRuntime, RemoteSnapshot } from '../remote-runtime.js'
 import type { NodeKind, NodePublicIdentity } from '../remote/node-api.js'
 
+export type { RemoteSnapshot }
+
 const ROUTE = '/api/dsh-remote-connect/manage'
 export type PublicNodeKind = NodeKind
 /** One node identity: protocol 2 carries it, protocol 1 records only keep the flat host pair. */
