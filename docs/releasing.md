@@ -28,7 +28,6 @@
      ```powershell
      dsh plugin --profile <profile> add @winlin926/dsh-carry@X.Y.Z
      ```
-   - `## English Summary` —— 给出 2~5 条简明英文要点（小版本修补也可保留 2~3 条）。
 
 ## 发布检查
 
