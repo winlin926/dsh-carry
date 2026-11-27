@@ -501,4 +501,17 @@ describe('client locale localization', () => {
       reason: '',
     })
   })
+
+  it('keeps default zh output in headless Node even when navigator.language is en-US, while respecting DOM lang', () => {
+    try {
+      vi.stubGlobal('navigator', { language: 'en-US' })
+      expect(clientText(undefined, '中文', 'English')).toBe('中文')
+      expect(parsePublicNodeAddress('')).toEqual({ ok: false, error: '公网节点地址不能为空。' })
+
+      vi.stubGlobal('document', { documentElement: { lang: 'en-US' } })
+      expect(clientText(undefined, '中文', 'English')).toBe('English')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })

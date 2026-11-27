@@ -128,12 +128,27 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
 
     await activeController.init()
 
-    const localHandler = async (req: IncomingMessage, res: ServerResponse) => {
-      const rejection = ready.connection.requestRejection(req)
+    const localHandler = async (
+      req: IncomingMessage,
+      res: ServerResponse,
+      peer?: { readonly signal?: AbortSignal; readonly principal?: { readonly kind?: string } },
+    ) => {
+      const legacyReject = (
+        ready.connection as unknown as { requestRejection?: (request: IncomingMessage) => number | undefined }
+      ).requestRejection
+      const rejection =
+        typeof legacyReject === 'function'
+          ? legacyReject.call(ready.connection, req)
+          : !peer || peer.signal?.aborted
+            ? 401
+            : peer.principal?.kind !== 'owner'
+              ? 403
+              : undefined
       // The gateway is itself a loopback caller holding the Host session; what it forwards is never local.
       if (
         rejection ||
         req.headers[REMOTE_MARK] !== undefined ||
+        activeController.isInternalRequest(req) ||
         !isLoopback(req.socket.remoteAddress) ||
         !sameOrigin(req)
       ) {
@@ -153,7 +168,13 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
 
     ready.effect(() => () => activeController.disposeResources(), 'remote-control public access')
     ready.effect(
-      () => ready.webServer.register({ kind: 'exact', path: MANAGE_PATH, handler: localHandler }),
+      () =>
+        ready.webServer.register({
+          kind: 'exact',
+          path: MANAGE_PATH,
+          auth: 'required',
+          handler: localHandler,
+        } as Parameters<typeof ready.webServer.register>[0]),
       'remote-control local management',
     )
     // Desktop's trusted IPC/Fetch carrier bypasses node:http. The outer gateway

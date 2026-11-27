@@ -679,3 +679,187 @@ it('omits pairing QR codes, tokenized links, and expiry timestamps from remote s
     expect('qr' in remoteStatus).toBe(false)
     expect('expiresAt' in remoteStatus).toBe(false)
   }))
+
+it('adapts to DSH 0.2.3+ authentication providers and route-level Peer admission without legacy launch tokens', async () => {
+  const folder = mkdtempSync(join(tmpdir(), 'dsh-rc-modern-'))
+  const previous = process.env.DSH_HOME
+  process.env.DSH_HOME = folder
+  const ctx = new Context()
+
+  const ownerCookie = 'dsh-owner-session=trusted-owner-token'
+  const providers = new Set<{
+    authenticate(request: {
+      headers: Record<string, string | string[] | undefined>
+    }): { signal: AbortSignal; principal: { kind: string } } | undefined
+  }>()
+  let registeredRoute:
+    | {
+        kind: string
+        path: string
+        auth?: string
+        handler: (
+          req: any,
+          res: any,
+          peer?: { signal: AbortSignal; principal: { kind: string } },
+        ) => Promise<void> | void
+      }
+    | undefined
+  let providerWithdrawn = false
+  let peerDisposed = false
+  let capturedInternalCookie = ''
+  const fetchRoutes = new Map<string, { fetch: (req: Request) => Promise<Response> }>()
+
+  const upstream = createServer((req, res) => {
+    let admitted: { signal: AbortSignal; principal: { kind: string } } | undefined
+    if (req.headers.cookie?.includes(ownerCookie)) {
+      admitted = OWNER
+    } else {
+      for (const provider of providers) {
+        admitted = provider.authenticate({ headers: req.headers })
+        if (admitted) break
+      }
+    }
+    if (req.url === MANAGE_PATH) {
+      if (!registeredRoute) {
+        res.writeHead(404).end()
+        return
+      }
+      void registeredRoute.handler(req, res, admitted)
+      return
+    }
+    if (!admitted) {
+      res.writeHead(401).end('unauthorized')
+      return
+    }
+    capturedInternalCookie = String(req.headers.cookie ?? '')
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+    res.end('<!doctype html><html><body><div id="root"></div></body></html>')
+  })
+  await new Promise<void>((resolve) => upstream.listen(0, '127.0.0.1', () => resolve()))
+  const upstreamPort = (upstream.address() as { port: number }).port
+
+  const stopConnection = ctx.provide('connection', {
+    createPeer: (options: { principal: { kind: string } }) => {
+      const ac = new AbortController()
+      return {
+        principal: options.principal,
+        signal: ac.signal,
+        dispose: async () => {
+          ac.abort()
+          peerDisposed = true
+        },
+      }
+    },
+    authentication: {
+      register: (provider: {
+        authenticate(request: {
+          headers: Record<string, string | string[] | undefined>
+        }): { signal: AbortSignal; principal: { kind: string } } | undefined
+      }) => {
+        providers.add(provider)
+        return async () => {
+          providers.delete(provider)
+          providerWithdrawn = true
+        }
+      },
+    },
+    fetch: {
+      register: (route: { path: string; fetch: (req: Request) => Promise<Response> }) => {
+        fetchRoutes.set(route.path, route)
+        return async () => {
+          fetchRoutes.delete(route.path)
+        }
+      },
+    },
+  })
+  const stopWebServer = ctx.provide('webServer', {
+    port: upstreamPort,
+    host: '127.0.0.1',
+    register: (route: typeof registeredRoute) => {
+      registeredRoute = route
+      return () => {
+        registeredRoute = undefined
+      }
+    },
+  })
+
+  try {
+    await ctx.plugin(Plugin, { certificateDir: join(folder, 'certificates') })
+    await vi.waitFor(() => expect(registeredRoute).toBeDefined())
+    expect(registeredRoute?.auth).toBe('required')
+    expect(providers.size).toBe(1)
+
+    const upstreamBase = `http://127.0.0.1:${upstreamPort}`
+    expect(
+      (
+        await fetch(`${upstreamBase}${MANAGE_PATH}`, {
+          method: 'POST',
+          headers: { origin: upstreamBase, 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'status' }),
+        })
+      ).status,
+    ).toBe(401)
+
+    const localPost = async (action: string, fields: Record<string, unknown> = {}) => {
+      const response = await fetch(`${upstreamBase}${MANAGE_PATH}`, {
+        method: 'POST',
+        headers: {
+          origin: upstreamBase,
+          cookie: ownerCookie,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ action, ...fields }),
+      })
+      return { status: response.status, ...(await response.json()) }
+    }
+
+    const started = await localPost('start')
+    expect(started).toMatchObject({ status: 200, enabled: true, local: true })
+
+    const gatewayBase = `http://127.0.0.1:${started.gatewayPort}`
+    const reqPair = await (
+      await fetch(`${gatewayBase}/rc/pair/request`, {
+        method: 'POST',
+        headers: { origin: gatewayBase, 'content-type': 'application/json' },
+        body: JSON.stringify({ token: new URL(started.links[0].url).hash.slice(6) }),
+      })
+    ).json()
+    const statusAfterReq = await localPost('status')
+    const pending = statusAfterReq.requests.find((row: { id: string }) => row.id === reqPair.id)
+    expect(
+      (await localPost('approve', { id: reqPair.id, name: pending.name, fingerprint: statusAfterReq.node.fingerprint }))
+        .status,
+    ).toBe(200)
+    const claim = await fetch(`${gatewayBase}/rc/pair/claim`, {
+      method: 'POST',
+      headers: { origin: gatewayBase, 'content-type': 'application/json' },
+      body: JSON.stringify({ id: reqPair.id, key: reqPair.key }),
+    })
+    const deviceCookie = claim.headers.get('set-cookie')!.split(';')[0]!
+
+    const page = await fetch(`${gatewayBase}/`, { headers: { cookie: deviceCookie } })
+    expect(page.status).toBe(200)
+    expect(await page.text()).toContain('<div id="root"></div>')
+    expect(capturedInternalCookie).toMatch(/^dsh-rc-internal=[A-Za-z0-9_-]{43}$/)
+
+    // Even if a request reaches the Host WebServer directly using the internal gateway cookie, local MANAGE_PATH refuses it.
+    expect(
+      (
+        await fetch(`${upstreamBase}${MANAGE_PATH}`, {
+          method: 'POST',
+          headers: { origin: upstreamBase, cookie: capturedInternalCookie, 'content-type': 'application/json' },
+          body: JSON.stringify({ action: 'status' }),
+        })
+      ).status,
+    ).toBe(403)
+  } finally {
+    ctx.registry.delete(Plugin)
+    await vi.waitFor(() => expect(providerWithdrawn && peerDisposed).toBe(true))
+    await stopWebServer()
+    await stopConnection()
+    await new Promise<void>((resolve) => upstream.close(() => resolve()))
+    if (previous === undefined) delete process.env.DSH_HOME
+    else process.env.DSH_HOME = previous
+    rmSync(folder, { recursive: true, force: true })
+  }
+})

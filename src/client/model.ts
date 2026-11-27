@@ -128,7 +128,10 @@ export const noSubscribe = () => noop
 
 export function clientText(locale: Pick<ClientLocale, 'resolveText'> | undefined, zh: string, en: string): string {
   if (locale) return locale.resolveText({ zh, en })
-  const lang = globalThis.document?.documentElement?.lang || globalThis.navigator?.language || 'zh'
+  const lang =
+    typeof globalThis.document !== 'undefined'
+      ? globalThis.document.documentElement?.lang || globalThis.navigator?.language || 'zh'
+      : 'zh'
   return /^zh(?:-|$)/i.test(lang) ? zh : en
 }
 export function remoteRuntime(): RemoteRuntime | undefined {

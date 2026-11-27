@@ -14,7 +14,13 @@ import { ServiceNode, forgetServiceNode, unregisterServiceNode } from '../servic
 import { detectSystemProxy, type SystemProxy } from '../system-proxy.js'
 import { bootScript } from '../boot.js'
 import { appendBootReport } from './boot-report.js'
-import { createQrCache, fetchUpstreamIndex, hostCookie, lanAddresses } from './network.js'
+import {
+  createHostUpstreamAuth,
+  createQrCache,
+  fetchUpstreamIndex,
+  type HostUpstreamAuth,
+  lanAddresses,
+} from './network.js'
 import { isProxyMode, loadPreferences, savePreferencesFile } from './preferences.js'
 import type { PublicNodeDeps } from './public-node-actions.js'
 import {
@@ -67,7 +73,7 @@ export class HostController {
   private publicNodes: PublicNodeConfig | undefined
   private publicNodesError: string | undefined
   private preferences: Preferences
-  private credential: string
+  private readonly upstreamAuth: HostUpstreamAuth
   private credentialTimer: ReturnType<typeof setInterval>
   private monitor: ReturnType<typeof setInterval> | undefined
   private probing = false
@@ -113,12 +119,12 @@ export class HostController {
     })
     this.pairing.prune((device) => !!device.host && /(?:\.trycloudflare\.com|\.lhr\.life)$/i.test(device.host))
 
-    this.credential = hostCookie(options.connection, options.upstreamPort)
-    // The Host session cookie is absolute (30 days by default). Refresh it well before that,
+    this.upstreamAuth = createHostUpstreamAuth(options.connection, options.upstreamPort)
+    // The legacy Host session cookie is absolute (30 days by default). Refresh it well before that,
     // so a gateway left running for weeks never starts answering 401 to every remote request.
     this.credentialTimer = setInterval(() => {
       try {
-        this.credential = hostCookie(options.connection, options.upstreamPort)
+        this.upstreamAuth.refresh()
       } catch {
         /* keep the current cookie */
       }
@@ -170,8 +176,13 @@ export class HostController {
   disposeResources(): void {
     this.stopMonitor()
     clearInterval(this.credentialTimer)
+    this.upstreamAuth.dispose()
     void this.access.certificates.stop()
     void this.access.resetOutbound()
+  }
+
+  isInternalRequest(req: Parameters<HostUpstreamAuth['isInternalRequest']>[0]): boolean {
+    return this.upstreamAuth.isInternalRequest(req)
   }
 
   isEnabled(): boolean {
@@ -198,12 +209,11 @@ export class HostController {
 
   private async renderIndex(): Promise<string> {
     try {
-      return await fetchUpstreamIndex(this.options.upstreamPort, this.credential)
+      return await fetchUpstreamIndex(this.options.upstreamPort, this.upstreamAuth.cookie())
     } catch (failure) {
       // A gateway left running for weeks can outlive its Host session; renew once before failing.
       if ((failure as { status?: number }).status !== 401) throw failure
-      this.credential = hostCookie(this.options.connection, this.options.upstreamPort)
-      return fetchUpstreamIndex(this.options.upstreamPort, this.credential)
+      return fetchUpstreamIndex(this.options.upstreamPort, this.upstreamAuth.refresh())
     }
   }
 
@@ -307,7 +317,7 @@ export class HostController {
       identityKey: this.options.hostIdentity.publicKey,
       clientVersion: this.options.nodeVersion,
       upstreamPort: this.options.upstreamPort,
-      upstreamCookie: () => this.credential,
+      upstreamCookie: () => this.upstreamAuth.cookie(),
       storage: this.options.storage,
       log: (event, fields) => this.logServiceNode(event, fields),
       relayTarget: (device) => {
@@ -416,12 +426,12 @@ export class HostController {
       await stopping
       if (this.disposed || ticket !== this.generation) return
 
-      this.credential = hostCookie(this.options.connection, this.options.upstreamPort)
+      this.upstreamAuth.refresh()
       const create = () =>
         new Gateway({
           pairing: this.pairing,
           upstreamPort: this.options.upstreamPort,
-          upstreamCookie: () => this.credential,
+          upstreamCookie: () => this.upstreamAuth.cookie(),
           manage: this.options.onManage,
           index: () => this.renderIndex(),
           boot: (context) => bootScript({ ...context, version: this.options.nodeVersion }),
