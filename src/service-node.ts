@@ -17,9 +17,9 @@ import type { RawData, WebSocket as TunnelSocket } from 'ws'
 import { NODE_API, type HostRegistration } from './remote/node-api.js'
 import {
   TUNNEL_BACKPRESSURE_HIGH_WATER, TUNNEL_BACKPRESSURE_LOW_WATER, TUNNEL_HEARTBEAT_INTERVAL_MS, TUNNEL_HEARTBEAT_TIMEOUT_MS,
-  TUNNEL_IDLE_TIMEOUT_MS, TUNNEL_MAX_REQUESTS_PER_HOST, TUNNEL_PATH, TUNNEL_REQUEST_TIMEOUT_MS, TunnelFrameError,
-  decodeTunnelFrame, encodeTunnelFrame, splitTunnelPayload,
-  type TunnelFrame, type TunnelHeaders,
+  TUNNEL_IDLE_TIMEOUT_MS, TUNNEL_MAX_REQUESTS_PER_HOST, TUNNEL_PATH, TUNNEL_REQUEST_TIMEOUT_MS, TUNNEL_WS_MESSAGE_MAX,
+  TunnelFrameError, assembleTunnelWsFrame, decodeTunnelFrame, encodeTunnelFrame, splitTunnelPayload, splitTunnelWsPayload,
+  type TunnelFrame, type TunnelHeaders, type TunnelWsMessageAssembly,
 } from './remote/tunnel-protocol.js'
 import { safePath } from './gateway.js'
 import { RELAY_MARK } from './direct/protocol.js'
@@ -116,6 +116,7 @@ interface WsCall {
   timer?: ReturnType<typeof setTimeout>
   /** Suppresses the close notification when the node itself asked for the close. */
   remoteClosed: boolean
+  pendingMessage?: TunnelWsMessageAssembly
 }
 
 /** A failure whose message is already the Chinese text shown by the panel. */
@@ -670,7 +671,7 @@ export class ServiceNode {
       case 'http.body.end': this.endHttp(frame.id); break
       case 'http.cancel': this.cancelHttp(frame.id); break
       case 'ws.open': this.openWs(frame.id, frame.path, frame.headers, frame.protocol, frame.relayDevice); break
-      case 'ws.frame': this.deliverWs(frame.id, frame.binary, payload); break
+      case 'ws.frame': this.deliverWs(frame.id, frame.binary, frame.fin, payload); break
       case 'ws.close': this.closeWs(frame.id, frame.code, frame.reason); break
       case 'pair.request': this.addPairing(frame.requestId, frame.clientName, frame.expiresAt); break
       case 'pair.revoked': this.options.relayPairRevoked?.(frame.clientDeviceId); break
@@ -785,7 +786,7 @@ export class ServiceNode {
       const target = safePath(path) ? this.target(headers, device) : undefined
       if (!target) { this.send({ t: 'ws.ack', id, ok: false, status: 403, message: '设备未授权。' }); return }
       delete target.headers['sec-websocket-protocol']
-      socket = new ws.WebSocket(`ws://127.0.0.1:${target.port}${path}`, protocol ? [protocol] : [], { headers: target.headers, handshakeTimeout: HANDSHAKE_TIMEOUT_MS, maxPayload: 32 * 1024 * 1024 })
+      socket = new ws.WebSocket(`ws://127.0.0.1:${target.port}${path}`, protocol ? [protocol] : [], { headers: target.headers, handshakeTimeout: HANDSHAKE_TIMEOUT_MS, maxPayload: TUNNEL_WS_MESSAGE_MAX })
     } catch {
       this.send({ t: 'ws.ack', id, ok: false, status: 502, message: '本机 WebSocket 服务没有接受连接。' })
       return
@@ -800,7 +801,9 @@ export class ServiceNode {
     socket.on('message', (data: RawData, isBinary: boolean) => {
       if (this.wsCalls.get(id) !== call) return
       this.touchWs(id, call)
-      this.send({ t: 'ws.frame', id, binary: isBinary }, bytesOf(data))
+      for (const slice of splitTunnelWsPayload(bytesOf(data))) {
+        this.send({ t: 'ws.frame', id, binary: isBinary, ...(slice.fin ? {} : { fin: false }) }, slice.payload)
+      }
       if ((this.socket?.bufferedAmount ?? 0) > OUTBOUND_HIGH_WATER) { socket.pause(); this.armDrain() }
     })
     socket.on('close', (code: number, reason: Buffer) => {
@@ -835,12 +838,22 @@ export class ServiceNode {
     call.timer.unref?.()
   }
 
-  private deliverWs(id: string, binary: boolean, payload: Uint8Array): void {
+  private deliverWs(id: string, binary: boolean, fin: boolean | undefined, payload: Uint8Array): void {
     const call = this.wsCalls.get(id)
     if (!call) return
     this.touchWs(id, call)
+    const assembled = assembleTunnelWsFrame(call.pendingMessage, { binary, fin }, payload)
+    if (assembled.status === 'error') {
+      this.wsCalls.delete(id)
+      clearTimeout(call.timer)
+      this.send({ t: 'ws.close', id, code: assembled.code, reason: assembled.reason })
+      try { call.socket.close(assembled.code, assembled.reason) } catch { /* already closed */ }
+      return
+    }
+    call.pendingMessage = assembled.pending
+    if (assembled.status !== 'message') return
     if (call.socket.readyState !== call.socket.OPEN) return
-    call.socket.send(payload, { binary })
+    call.socket.send(assembled.data, { binary: assembled.binary })
   }
 
   private closeWs(id: string, code?: number, reason?: string): void {

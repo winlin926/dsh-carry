@@ -153,6 +153,10 @@ test('desktop approval first still waits for the phone decision', async () => {
     assert.equal(confirmed.json.complete, true)
     assert.equal(confirmed.setCookies.length, 1)
     assert.equal(parseSetCookie(confirmed.setCookies[0]).name, 'dsh_session')
+    const completeFrame = await hostClient.nextOfType('pair.complete')
+    assert.equal(completeFrame.frame.requestId, claim.json.requestId)
+    assert.equal(completeFrame.frame.clientDeviceId, client.deviceId)
+    assert.equal(completeFrame.frame.clientIdentityKey, client.identityKey)
   } finally {
     hostClient.close()
     await node.stop()

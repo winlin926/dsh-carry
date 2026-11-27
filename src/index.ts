@@ -439,7 +439,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
     const startMonitor = () => { stopMonitor(); monitor = setInterval(() => void probe(), 30_000); monitor.unref(); void probe() }
     const stop = async () => {
       ++generation
-      enabled = false; activeMode = undefined; access?.setActive(false); qr = undefined; pairing.invalidate()
+      enabled = false; activeMode = undefined; lanTls = undefined; access?.setActive(false); qr = undefined; pairing.invalidate()
       stopMonitor()
       const current = gateway; gateway = undefined
       await current?.close()
@@ -505,19 +505,21 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
         // The port of last time first: a phone's bookmark or open tab then still points at this computer.
         // A configured port wins in both modes: the QA profile pins one, and a fixed domain still
         // needs PUBLIC_PORT when nothing is configured.
-        const wanted = config.gatewayPort || (mode === 'public' ? PUBLIC_PORT : preferences.port || 0)
+        const fixedPublicPort = mode === 'public' && !serviceNodeMode
+        const wanted = config.gatewayPort || (fixedPublicPort ? PUBLIC_PORT : preferences.port || 0)
         try { await next.listen(host, wanted) }
         catch (failure) {
           const code = (failure as NodeJS.ErrnoException).code ?? ''
-          if (mode === 'public' && code === 'EADDRINUSE') throw new Error(`公网端口 ${wanted} 已被占用：可能另一个 DSH 配置正在使用公网模式，请先关闭它的远程连接。`)
+          if (fixedPublicPort && code === 'EADDRINUSE') throw new Error(`公网端口 ${wanted} 已被占用：可能另一个 DSH 配置正在使用公网模式，请先关闭它的远程连接。`)
           // Only a port that cannot be had is worth a second try on another one.
-          if (mode === 'public' || config.gatewayPort || !wanted || !['EADDRINUSE', 'EACCES'].includes(code)) throw failure
+          if (fixedPublicPort || config.gatewayPort || !wanted || !['EADDRINUSE', 'EACCES'].includes(code)) throw failure
           await next.close(); next = create(); await next.listen(host, 0)
         }
-        if (mode === 'lan' && !config.gatewayPort && next.port !== preferences.port) { preferences = { ...preferences, port: next.port }; try { savePreferences() } catch { /* only a convenience */ } }
+        if (!fixedPublicPort && !config.gatewayPort && next.port !== preferences.port) { preferences = { ...preferences, port: next.port }; try { savePreferences() } catch { /* only a convenience */ } }
         if (disposed || ticket !== generation) { await next.close(); return }
         gateway = next
         if (tls) lanTls = tls
+        else lanTlsError = undefined
         enabled = true; activeMode = mode; access?.setActive(mode === 'public'); qr = pairing.issue(); serviceQr = undefined
         if (mode === 'public') startMonitor(); else stopMonitor()
         // The tunnel is an extra outbound connection on top of the gateway; its failure is reported in
@@ -655,6 +657,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           return status(local)
         }
         case 'addPublicNode': {
+          if (!local) throw new Error('公网节点只能在本机面板添加。')
           const store = nodeStore()
           const url = typeof input.url === 'string' ? input.url.trim() : ''
           if (!url) throw new Error('请填写公网节点地址。')
@@ -673,6 +676,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           return { ok: true, node: record }
         }
         case 'checkPublicNode': {
+          if (!local) throw new Error('公网节点只能在本机面板检测。')
           const store = nodeStore()
           const id = String(input.id ?? '')
           const record = store.list().find(item => item.id === id)
@@ -755,6 +759,7 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           return { ok: true, node }
         }
         case 'setCurrentPublicNode': {
+          if (!local) throw new Error('公网节点只能在本机面板切换。')
           const store = nodeStore()
           const id = String(input.id ?? '')
           const record = store.list().find(item => item.id === id)
@@ -764,8 +769,9 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           if (record.identityChange !== null) throw new Error(IDENTITY_CHANGE_ERROR)
           if (enabled && preferences.mode === 'public' && busy) throw new Error('请等待当前连接操作完成。')
           // A gateway node's public entry still rides on the saved domain; a service node's entry is the
-          // tunnel itself and leaves PublicAccess alone.
+          // tunnel itself and leaves PublicAccess alone (clearing any domain owned by a saved gateway node).
           if (record.kind === 'gateway') await access?.saveDomain(record.url)
+          else if (record.kind === 'service' && access?.domain && store.list().some(item => item.kind === 'gateway' && item.url === access?.domain)) await access?.saveDomain('')
           store.setCurrent(id)
           if (enabled && preferences.mode === 'public') {
             if (record.kind === 'service') {
@@ -776,11 +782,17 @@ export async function apply(ctx: Context, config: Config = {}): Promise<void> {
           return status(local)
         }
         case 'removePublicNode': {
+          if (!local) throw new Error('公网节点只能在本机面板删除。')
           const store = nodeStore()
           const id = String(input.id ?? '')
+          const wasCurrent = store.current === id
           const record = store.list().find(item => item.id === id)
           const removed = store.remove(id)
           if (!removed) throw new Error('公网节点不存在。')
+          if (record?.kind === 'gateway') {
+            if (access?.domain === removed.origin) await access.saveDomain('')
+            if (wasCurrent && enabled && activeMode === 'public') await stop()
+          }
           if (record?.kind === 'service') {
             // The node keeps its Host row until the Host deletes it; doing that before dropping the
             // local credential is what lets a later re-add register instead of hitting a 409.

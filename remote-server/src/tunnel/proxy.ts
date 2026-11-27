@@ -16,10 +16,12 @@ import {
   TUNNEL_IDLE_TIMEOUT_MS,
   TUNNEL_MAX_REQUESTS_PER_DEVICE,
   TUNNEL_MAX_REQUESTS_PER_HOST,
-  TUNNEL_MESSAGE_MAX,
   TUNNEL_REQUEST_TIMEOUT_MS,
+  TUNNEL_WS_MESSAGE_MAX,
   asTunnelHeaders,
+  assembleTunnelWsFrame,
   splitTunnelPayload,
+  splitTunnelWsPayload,
   toTunnelHeaders,
   type TunnelFrame,
   type TunnelHeaders,
@@ -29,6 +31,7 @@ import {
   type TunnelWsAckFrame,
   type TunnelWsCloseFrame,
   type TunnelWsFrameFrame,
+  type TunnelWsMessageAssembly,
   type TunnelWsOpenFrame,
 } from '../../../src/remote/tunnel-protocol.js'
 import type { TunnelFrameHandler, TunnelHub } from './hub.js'
@@ -100,6 +103,7 @@ interface WsExchange {
   client: WebSocket | null
   done: boolean
   timer: NodeJS.Timeout | null
+  pendingMessage?: TunnelWsMessageAssembly
 }
 
 function toBuffer(data: RawData): Buffer {
@@ -154,7 +158,7 @@ export class TunnelProxy implements TunnelFrameHandler {
     this.wss = new WebSocketServer({
       noServer: true,
       perMessageDeflate: false,
-      maxPayload: TUNNEL_MESSAGE_MAX,
+      maxPayload: TUNNEL_WS_MESSAGE_MAX,
       handleProtocols: (protocols, request) => {
         const preferred = this.preferredProtocols.get(request)
         this.preferredProtocols.delete(request)
@@ -636,8 +640,12 @@ export class TunnelProxy implements TunnelFrameHandler {
       this.touchWs(exchange)
       if (exchange.done) return
       const buffer = toBuffer(data)
-      for (const slice of splitTunnelPayload(buffer)) {
-        this.deps.hub.sendHostFrame(exchange.hostId, { t: 'ws.frame', id: exchange.id, binary: isBinary }, slice)
+      for (const slice of splitTunnelWsPayload(buffer)) {
+        this.deps.hub.sendHostFrame(
+          exchange.hostId,
+          { t: 'ws.frame', id: exchange.id, binary: isBinary, ...(slice.fin ? {} : { fin: false }) },
+          slice.payload,
+        )
       }
     })
     client.on('close', (code, reason) => {
@@ -665,8 +673,26 @@ export class TunnelProxy implements TunnelFrameHandler {
     const client = exchange.client
     if (!client || exchange.done) return
     this.touchWs(exchange)
+    const assembled = assembleTunnelWsFrame(exchange.pendingMessage, frame, payload)
+    if (assembled.status === 'error') {
+      this.deps.hub.sendHostFrame(exchange.hostId, {
+        t: 'ws.close',
+        id: exchange.id,
+        code: assembled.code,
+        reason: assembled.reason,
+      })
+      this.settleWs(exchange)
+      try {
+        client.close(assembled.code, assembled.reason)
+      } catch {
+        client.terminate()
+      }
+      return
+    }
+    exchange.pendingMessage = assembled.pending
+    if (assembled.status !== 'message') return
     try {
-      client.send(Buffer.from(payload), { binary: frame.binary })
+      client.send(Buffer.from(assembled.data), { binary: assembled.binary })
     } catch (error) {
       this.deps.logger.warn({ event: 'tunnel.ws.send.failed', hostId, id: exchange.id, error })
       this.settleWs(exchange)

@@ -179,7 +179,7 @@ export class PairingService {
     if (request.state === 'pending') {
       this.repos.advancePairing(requestId, ['pending'], 'client_approved', 'client_confirmed_at', now)
     } else if (request.state === 'host_approved') {
-      this.complete(request, now)
+      this.completeAndNotify(request, now)
     }
     return this.statusWithCookie(requestId, origin, now)
   }
@@ -209,13 +209,7 @@ export class PairingService {
     if (request.state === 'pending') {
       this.repos.advancePairing(requestId, ['pending'], 'host_approved', 'host_confirmed_at', now)
     } else if (request.state === 'client_approved') {
-      this.complete(request, now)
-      this.push(host.host_id, {
-        t: 'pair.complete',
-        requestId,
-        clientDeviceId: request.client_device_id,
-        clientIdentityKey: request.client_identity_key,
-      })
+      this.completeAndNotify(request, now)
     }
     return this.status(requestId)
   }
@@ -260,9 +254,19 @@ export class PairingService {
     }
   }
 
+  private completeAndNotify(request: PairingRequestRow, now: number): void {
+    if (!this.complete(request, now)) return
+    this.push(request.host_id, {
+      t: 'pair.complete',
+      requestId: request.request_id,
+      clientDeviceId: request.client_device_id,
+      clientIdentityKey: request.client_identity_key,
+    })
+  }
+
   /** Complete pairing exactly once, then materialize device + relationship. */
-  private complete(request: PairingRequestRow, now: number): void {
-    this.repos.transaction(() => {
+  private complete(request: PairingRequestRow, now: number): boolean {
+    return this.repos.transaction(() => {
       const advanced = this.repos.advancePairing(
         request.request_id,
         ['host_approved', 'client_approved'],
@@ -270,7 +274,7 @@ export class PairingService {
         'completed_at',
         now,
       )
-      if (!advanced) return
+      if (!advanced) return false
       this.repos.upsertDevice({
         deviceId: request.client_device_id,
         name: request.client_name,
@@ -284,6 +288,7 @@ export class PairingService {
         clientIdentityKey: request.client_identity_key,
         now,
       })
+      return true
     })
   }
 

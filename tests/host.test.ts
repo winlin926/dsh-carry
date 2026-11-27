@@ -286,6 +286,10 @@ it('publishes a fixed HTTPS entry, secures pairing and reloads certificates only
       expect((await command('reloadLanCertificate')).status).toBe(400)
       expect((await command('status')).lanTls.error).toEqual(expect.any(String))
       expect((await call(MANAGE_PATH, { action: 'requests' }, claim.cookie.split(';')[0])).status).toBe(200)
+      await command('stop')
+      const stopped = await command('status')
+      expect(stopped.lanTls.origin).toBeUndefined()
+      expect(stopped.lanTls.expiresAt).toBeUndefined()
     }, { gatewayPort: port, lanTls: { hostname: 'lan.example.test', certFile, keyFile } })
   } finally { rmSync(folder, { recursive: true, force: true }) }
 })

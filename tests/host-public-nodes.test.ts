@@ -3,6 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import * as Connection from '@deepseek-ai/dsh-client-connection'
 import * as Plugin from '../src/index.js'
 import { Gateway, MANAGE_PATH } from '../src/gateway.js'
+import { PUBLIC_PORT } from '../src/public-access.js'
 import { TUNNEL_PATH } from '../src/remote/tunnel-protocol.js'
 import { identityOfPublicKey } from '../src/host-identity.js'
 import type { PublicNodeIdentity } from '../src/public-node.js'
@@ -519,3 +520,86 @@ it('reports a node registration that could not be revoked when removing the node
     await fake.close()
   }
 })
+
+it('rejects public node management actions from remote clients', () => withHost(async ({ command }) => {
+  await command('preferences', { mode: 'lan' })
+  const state = await command('start')
+  const base = `http://127.0.0.1:${state.gatewayPort}`
+  const post = (path: string, data: unknown, cookie = '') => fetch(base + path, { method: 'POST', headers: { origin: base, cookie, 'content-type': 'application/json' }, body: JSON.stringify(data) })
+  const request = await (await post('/rc/pair/request', { token: new URL(state.links[0].url).hash.slice(6) })).json()
+  const current = await command('status')
+  const pending = current.requests.find((row: { id: string }) => row.id === request.id)
+  expect((await command('approve', { id: request.id, name: pending.name, fingerprint: current.node.fingerprint })).status).toBe(200)
+  const claim = await post('/rc/pair/claim', { id: request.id, key: request.key })
+  const cookie = claim.headers.get('set-cookie')!.split(';')[0]!
+  const remoteManage = async (action: string, fields: Record<string, unknown> = {}) => {
+    const response = await post(MANAGE_PATH, { action, ...fields }, cookie)
+    return { status: response.status, ...await response.json() }
+  }
+  for (const action of [
+    remoteManage('addPublicNode', { url: 'https://service.example.com' }),
+    remoteManage('checkPublicNode', { id: 'any' }),
+    remoteManage('setCurrentPublicNode', { id: 'any' }),
+    remoteManage('removePublicNode', { id: 'any' }),
+  ]) {
+    expect(await action).toMatchObject({ status: 400, error: expect.stringContaining('本机面板') })
+  }
+  await command('stop')
+}))
+
+it('starts a service node without requiring PUBLIC_PORT to be free', async () => {
+  const restoreTls = allowSelfSignedTls()
+  const fake = await startFakeServiceNode()
+  const realListen = Gateway.prototype.listen
+  const seenPorts: number[] = []
+  const listen = vi.spyOn(Gateway.prototype, 'listen').mockImplementation(async function (this: Gateway, host, port = 0) {
+    seenPorts.push(port)
+    if (port === PUBLIC_PORT) throw Object.assign(new Error('in use'), { code: 'EADDRINUSE' })
+    return realListen.call(this, host, port)
+  })
+  try {
+    await withHost(async ({ command }) => {
+      stubDiscoveryAndNetwork()
+      const added = await command('addPublicNode', { url: fake.origin })
+      await command('setCurrentPublicNode', { id: added.node.id })
+      await command('preferences', { mode: 'public' })
+      const started = await command('start')
+      expect(started).toMatchObject({ status: 200, enabled: true, activeMode: 'public' })
+      expect(seenPorts).toEqual([0])
+      expect(started.gatewayPort).toBeGreaterThan(0)
+      expect(started.gatewayPort).not.toBe(PUBLIC_PORT)
+      await command('stop')
+    })
+  } finally {
+    listen.mockRestore()
+    restoreTls()
+    await fake.close()
+  }
+})
+
+it('clears gateway domain when switching to a service node or removing the active gateway node', () => withHost(async ({ command }) => {
+  stubDiscovery(url => url.startsWith('https://gw.example.com') ? discovery({ kind: 'gateway', identity: NODE_A }) : discovery({ kind: 'service', identity: NODE_B }))
+  const gw = await command('addPublicNode', { url: 'https://gw.example.com' })
+  const svc = await command('addPublicNode', { url: 'https://svc.example.com' })
+  await command('setCurrentPublicNode', { id: gw.node.id })
+  expect((await command('status')).publicUrl).toBe('https://gw.example.com')
+
+  const switched = await command('setCurrentPublicNode', { id: svc.node.id })
+  expect(switched.status).toBe(200)
+  expect(switched.publicNodes.current).toBe(svc.node.id)
+  expect(switched.publicUrl).toBeNull()
+
+  await command('setCurrentPublicNode', { id: gw.node.id })
+  await command('preferences', { mode: 'public' })
+  const listen = vi.spyOn(Gateway.prototype, 'listen').mockImplementation(async function (this: Gateway): Promise<number> { this.port = PUBLIC_PORT; return PUBLIC_PORT })
+  try {
+    expect((await command('start')).enabled).toBe(true)
+    const removed = await command('removePublicNode', { id: gw.node.id })
+    expect(removed).toMatchObject({ status: 200, enabled: false, phase: 'off', publicUrl: null })
+    expect(removed.activeMode).toBeUndefined()
+    expect(removed.publicNodes).toEqual({ current: null, list: [expect.objectContaining({ id: svc.node.id })], pendingReview: false })
+  } finally {
+    await command('stop').catch(() => undefined)
+    listen.mockRestore()
+  }
+}))

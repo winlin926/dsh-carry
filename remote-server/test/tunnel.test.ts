@@ -4,7 +4,9 @@ import { request as httpRequest, type IncomingHttpHeaders } from 'node:http'
 import { test } from 'node:test'
 import WebSocket from 'ws'
 import {
+  TUNNEL_FRAME_PAYLOAD_MAX,
   splitTunnelPayload,
+  splitTunnelWsPayload,
   type TunnelFrame,
   type TunnelHeaders,
   type TunnelHttpRequestFrame,
@@ -411,6 +413,78 @@ test('WebSocket upgrades are proxied to the Host and frames echo back', async ()
     }
     assert.equal(messages[0].toString('utf8'), 'echoed')
     client.close()
+  } finally {
+    await node.stop()
+  }
+})
+
+test('WebSocket fragments and reassembles messages larger than TUNNEL_MESSAGE_MAX', async () => {
+  const node = await startNode()
+  try {
+    const { paired, host } = await pairAndConnect(node)
+    const port = nodePort(node)
+    const client = new WebSocket(`ws://127.0.0.1:${port}/api/ws`, { headers: { cookie: paired.cookie } })
+    const messages: Array<{ data: Buffer; isBinary: boolean }> = []
+    let closeCode: number | undefined
+    client.on('message', (data, isBinary) => messages.push({ data: Buffer.from(data as Buffer), isBinary }))
+    client.on('close', code => { closeCode = code })
+    client.on('error', () => undefined)
+    const opened = await host.nextOfType('ws.open')
+    const openFrame = opened.frame as Extract<TunnelFrame, { t: 'ws.open' }>
+    host.send({ t: 'ws.ack', id: openFrame.id, ok: true })
+    await new Promise<void>((resolve, reject) => {
+      client.once('open', () => resolve())
+      client.once('error', reject)
+    })
+
+    const largeBinary = randomBytes(120 * 1024)
+    client.send(largeBinary)
+    const receivedFrames: Array<Extract<TunnelFrame, { t: 'ws.frame' }>> = []
+    const receivedChunks: Buffer[] = []
+    for (;;) {
+      const entry = await host.next(frame => frame.t === 'ws.frame' && frame.id === openFrame.id)
+      const frame = entry.frame as Extract<TunnelFrame, { t: 'ws.frame' }>
+      receivedFrames.push(frame)
+      receivedChunks.push(entry.payload)
+      if (frame.fin !== false) break
+    }
+    assert.equal(receivedFrames.length, 3)
+    assert.equal(receivedFrames[0].binary, true)
+    assert.equal(receivedFrames[0].fin, false)
+    assert.equal(receivedChunks[0].length, TUNNEL_FRAME_PAYLOAD_MAX)
+    assert.equal(receivedFrames[1].fin, false)
+    assert.equal(receivedChunks[1].length, TUNNEL_FRAME_PAYLOAD_MAX)
+    assert.notEqual(receivedFrames[2].fin, false)
+    assert.deepEqual(Buffer.concat(receivedChunks), largeBinary)
+
+    const largeText = Buffer.from('z'.repeat(120 * 1024), 'utf8')
+    for (const slice of splitTunnelWsPayload(largeText)) {
+      host.send(
+        slice.fin
+          ? { t: 'ws.frame', id: openFrame.id, binary: false }
+          : { t: 'ws.frame', id: openFrame.id, binary: false, fin: false },
+        slice.payload,
+      )
+    }
+    const textDeadline = Date.now() + 5_000
+    while (messages.length === 0) {
+      if (Date.now() > textDeadline) throw new Error('the client did not receive the reassembled message')
+      await delay(10)
+    }
+    assert.equal(messages.length, 1)
+    assert.equal(messages[0].isBinary, false)
+    assert.deepEqual(messages[0].data, largeText)
+
+    host.send({ t: 'ws.frame', id: openFrame.id, binary: true, fin: false }, Buffer.from([1]))
+    host.send({ t: 'ws.frame', id: openFrame.id, binary: false, fin: true }, Buffer.from([2]))
+    const closedFrame = await host.next(frame => frame.t === 'ws.close' && frame.id === openFrame.id)
+    assert.equal((closedFrame.frame as Extract<TunnelFrame, { t: 'ws.close' }>).code, 1002)
+    const closeDeadline = Date.now() + 5_000
+    while (closeCode === undefined) {
+      if (Date.now() > closeDeadline) throw new Error('the client did not receive close code 1002')
+      await delay(10)
+    }
+    assert.equal(closeCode, 1002)
   } finally {
     await node.stop()
   }

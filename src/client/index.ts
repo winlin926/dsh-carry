@@ -263,7 +263,7 @@ export function RemoteControlPanel({ manager, locale }: PanelProps): React.React
   const subtitle = activeRoute ? text('当前线路', 'Active route') + ' · ' + activeRoute
     : remote?.entry ? text('连接入口', 'Entry') + ' · ' + (remote.entry === 'lan' ? text('局域网', 'Local network') : text('公网', 'Public'))
       : text('用手机浏览器继续电脑上的会话与审批。', 'Continue your sessions and review approvals on your phone.')
-  const settingsIssue = domainBlocked ? '需配置公网域名' : shown === 'public' && (certificate?.error || certificateExpired) ? '证书需处理' : shown === 'public' && state?.publicUrlCheck && !state.publicUrlCheck.reachable ? '公网检测未通过' : ''
+  const settingsIssue = domainBlocked ? '需配置公网域名' : shown === 'public' && currentNode?.kind !== 'service' && (certificate?.error || certificateExpired) ? '证书需处理' : shown === 'public' && currentNode?.kind !== 'service' && state?.publicUrlCheck && !state.publicUrlCheck.reachable ? '公网检测未通过' : ''
   const button = (label: string, action: string, fields?: Record<string, unknown>, extra = '') => h('button', { type: 'button', className: `dsrc-button ${extra}`, disabled, onClick: () => { void act(action, fields) } }, label)
   /** A new ticket drops every request waiting for approval, so refresh waits for them. */
   const refreshCode = () => {

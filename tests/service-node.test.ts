@@ -12,7 +12,7 @@ import { PairingService } from '../src/pairing.js'
 import { RELAY_MARK } from '../src/direct/protocol.js'
 import { identityOfPublicKey } from '../src/host-identity.js'
 import { SERVICE_NODES_FILE, ServiceNode, unregisterServiceNode, type ServiceNodeOptions } from '../src/service-node.js'
-import { TUNNEL_FRAME_PAYLOAD_MAX, TUNNEL_PATH, decodeTunnelFrame, encodeTunnelFrame, type TunnelFrame } from '../src/remote/tunnel-protocol.js'
+import { TUNNEL_FRAME_PAYLOAD_MAX, TUNNEL_PATH, decodeTunnelFrame, encodeTunnelFrame, splitTunnelWsPayload, type TunnelFrame } from '../src/remote/tunnel-protocol.js'
 
 const cleanups: Array<() => Promise<unknown> | void> = []
 afterEach(async () => { for (const fn of cleanups.splice(0).reverse()) await fn() })
@@ -512,6 +512,73 @@ describe('service node tunnel', () => {
     upstream.wsSockets[0]?.close(4001, '上游关闭')
     const closed = await tunnel.waitFrame('ws.close')
     expect(closed.frame).toMatchObject({ id: 'w2', code: 4001, reason: '上游关闭' })
+  })
+
+  it('fragments and reassembles WebSocket messages larger than TUNNEL_FRAME_PAYLOAD_MAX', async () => {
+    const storage = await folder()
+    const fake = await startFakeNode()
+    const received: Array<{ payload: Buffer; isBinary: boolean }> = []
+    const upstream = await startUpstream({
+      onWs: ws => {
+        ws.on('message', (data: unknown, isBinary: boolean) => {
+          const buf = toBuffer(data)
+          received.push({ payload: buf, isBinary })
+          ws.send(buf, { binary: isBinary })
+        })
+      },
+    })
+    const fixture = serviceNode(fake.origin, storage, upstream.port)
+    await fixture.start()
+    await waitFor(() => fixture.node.status().connected, '隧道已连接')
+    const tunnel = await fake.waitTunnel()
+
+    tunnel.send({ t: 'ws.open', id: 'w-big', path: '/ws', headers: {} })
+    expect((await tunnel.waitFrame('ws.ack')).frame).toMatchObject({ id: 'w-big', ok: true })
+
+    const largeText = Buffer.from('k'.repeat(120 * 1024), 'utf8')
+    const slices = splitTunnelWsPayload(largeText)
+    expect(slices).toHaveLength(3)
+    for (const slice of slices) {
+      tunnel.send({ t: 'ws.frame', id: 'w-big', binary: false, fin: slice.fin }, slice.payload)
+    }
+    await waitFor(() => received[0], '上游收到分片重组后的文本消息')
+    expect(received).toHaveLength(1)
+    expect(received[0]!.isBinary).toBe(false)
+    expect(received[0]!.payload.equals(largeText)).toBe(true)
+
+    const echoedChunks: Buffer[] = []
+    for (let i = 0; i < 3; i++) {
+      const part = await tunnel.waitFrame('ws.frame')
+      expect(part.frame.id).toBe('w-big')
+      expect(part.frame.binary).toBe(false)
+      if (i < 2) {
+        expect(part.frame.fin).toBe(false)
+        expect(part.payload.length).toBe(TUNNEL_FRAME_PAYLOAD_MAX)
+      } else {
+        expect(part.frame.fin).not.toBe(false)
+      }
+      echoedChunks.push(part.payload)
+    }
+    expect(Buffer.concat(echoedChunks).equals(largeText)).toBe(true)
+
+    const largeBin = randomBytes(120 * 1024)
+    upstream.wsSockets[0]!.send(largeBin, { binary: true })
+    const binChunks: Buffer[] = []
+    for (let i = 0; i < 3; i++) {
+      const part = await tunnel.waitFrame('ws.frame')
+      expect(part.frame.id).toBe('w-big')
+      expect(part.frame.binary).toBe(true)
+      expect(part.frame.fin !== false).toBe(i === 2)
+      binChunks.push(part.payload)
+    }
+    expect(Buffer.concat(binChunks).equals(largeBin)).toBe(true)
+
+    tunnel.send({ t: 'ws.open', id: 'w-bad', path: '/ws', headers: {} })
+    expect((await tunnel.waitFrame('ws.ack')).frame).toMatchObject({ id: 'w-bad', ok: true })
+    tunnel.send({ t: 'ws.frame', id: 'w-bad', binary: true, fin: false }, Buffer.from([1]))
+    tunnel.send({ t: 'ws.frame', id: 'w-bad', binary: false, fin: true }, Buffer.from([2]))
+    const closed = await tunnel.waitFrame('ws.close')
+    expect(closed.frame).toMatchObject({ id: 'w-bad', code: 1002 })
   })
 
   it('keeps pairing requests until this computer answers, then relays the answer', async () => {

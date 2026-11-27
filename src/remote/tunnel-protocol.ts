@@ -21,6 +21,8 @@ export const TUNNEL_FRAME_HEADER_MAX = 16 * 1024
 export const TUNNEL_FRAME_PAYLOAD_MAX = 48 * 1024
 /** Upper bound for one whole WSS message (used as the `ws` `maxPayload`). */
 export const TUNNEL_MESSAGE_MAX = 4 + TUNNEL_FRAME_HEADER_MAX + TUNNEL_FRAME_PAYLOAD_MAX
+/** Upper bound for one proxied application WebSocket message across tunnel slices. */
+export const TUNNEL_WS_MESSAGE_MAX = 32 * 1024 * 1024
 
 /** Both ends send `{ t: 'ping' }` this often. */
 export const TUNNEL_HEARTBEAT_INTERVAL_MS = 20_000
@@ -102,8 +104,8 @@ export interface TunnelWsAckFrame {
   protocol?: string
   message?: string
 }
-/** Either side: one WebSocket message. `binary` distinguishes text from binary frames. */
-export interface TunnelWsFrameFrame { t: 'ws.frame'; id: string; binary: boolean }
+/** Either side: one WebSocket message (or one slice when `fin === false`). `binary` distinguishes text from binary frames. */
+export interface TunnelWsFrameFrame { t: 'ws.frame'; id: string; binary: boolean; fin?: boolean }
 /** Either side: close one WebSocket. */
 export interface TunnelWsCloseFrame { t: 'ws.close'; id: string; code?: number; reason?: string }
 
@@ -244,6 +246,62 @@ export function splitTunnelPayload(data: Uint8Array): Uint8Array[] {
     slices.push(data.subarray(offset, Math.min(offset + TUNNEL_FRAME_PAYLOAD_MAX, data.byteLength)))
   }
   return slices
+}
+
+/**
+ * Split one WebSocket message into tunnel frame payloads with `fin` markers.
+ * Unlike HTTP body chunks, an empty WebSocket message still emits one final frame.
+ */
+export function splitTunnelWsPayload(data: Uint8Array): Array<{ payload: Uint8Array; fin: boolean }> {
+  if (data.byteLength <= TUNNEL_FRAME_PAYLOAD_MAX) return [{ payload: data, fin: true }]
+  const slices = splitTunnelPayload(data)
+  return slices.map((payload, index) => ({ payload, fin: index === slices.length - 1 }))
+}
+
+export interface TunnelWsMessageAssembly {
+  binary: boolean
+  chunks: Uint8Array[]
+  size: number
+}
+
+export type TunnelWsAssembleResult =
+  | { status: 'message'; binary: boolean; data: Uint8Array; pending: undefined }
+  | { status: 'pending'; pending: TunnelWsMessageAssembly }
+  | { status: 'error'; code: 1002 | 1009; reason: string }
+
+/** Reassemble `ws.frame` slices up to {@link TUNNEL_WS_MESSAGE_MAX}. Single-frame messages bypass buffering. */
+export function assembleTunnelWsFrame(
+  pending: TunnelWsMessageAssembly | undefined,
+  frame: Pick<TunnelWsFrameFrame, 'binary' | 'fin'>,
+  payload: Uint8Array,
+): TunnelWsAssembleResult {
+  const fin = frame.fin !== false
+  if (!pending) {
+    if (payload.byteLength > TUNNEL_WS_MESSAGE_MAX) {
+      return { status: 'error', code: 1009, reason: 'message too large' }
+    }
+    if (fin) return { status: 'message', binary: frame.binary, data: payload, pending: undefined }
+    return {
+      status: 'pending',
+      pending: { binary: frame.binary, chunks: [Buffer.from(payload)], size: payload.byteLength },
+    }
+  }
+  if (pending.binary !== frame.binary) {
+    return { status: 'error', code: 1002, reason: 'inconsistent fragmented frame type' }
+  }
+  const size = pending.size + payload.byteLength
+  if (size > TUNNEL_WS_MESSAGE_MAX) {
+    return { status: 'error', code: 1009, reason: 'message too large' }
+  }
+  pending.chunks.push(Buffer.from(payload))
+  pending.size = size
+  if (!fin) return { status: 'pending', pending }
+  return {
+    status: 'message',
+    binary: pending.binary,
+    data: Buffer.concat(pending.chunks, pending.size),
+    pending: undefined,
+  }
 }
 
 /** Copy a Node header record into the JSON-safe tunnel shape (numbers become strings). */
