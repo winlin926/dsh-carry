@@ -12,7 +12,7 @@
   <a href="https://github.com/winlin926/dsh-carry/blob/main/README.md">简体中文</a> · English
 </p>
 
-`dsh-carry` is a remote-control plugin for DeepSeek Harness (DSH). Scan a QR code from your phone browser to attach directly to the DSH instance running on your computer—continue conversations, review tool approvals, inspect workspace files, and open live HTML previews. Available sessions, models, and tools always come directly from your host.
+`dsh-carry` is a remote-control plugin for DeepSeek Harness (DSH). Scan a QR code from your phone browser to attach directly to the DSH instance running on your computer—continue conversations, review tool approvals, inspect workspace files, and open live HTML previews. Available sessions, models, and tools always come from your host.
 
 <details>
 <summary><strong>Show the phone recording (26-second GIF): answer a question card, watch a tool run, open an HTML preview</strong></summary>
@@ -82,7 +82,11 @@ Follow the [SakuraFrp public-access walkthrough (Chinese)](docs/public-access-sa
 - **Host fingerprint verification**: During first-time public pairing, both your phone and computer display the host fingerprint so you can verify you are connecting to your own machine.
 
 > **🔒 Security boundary: approve only devices you trust.**
-> A paired phone has privileges close to local access. Public relay nodes and tunnel providers terminate TLS and inspect forwarded traffic; this plugin does not add end-to-end encryption on top of the relay, and the maintainers operate no public servers. Only connect through nodes you host yourself or explicitly trust.
+>
+> - A paired phone has privileges close to local access.
+> - Public relay nodes and tunnel providers terminate TLS and can inspect forwarded traffic.
+> - This plugin does not add end-to-end encryption on top of the relay, and the maintainers operate no public servers.
+> - Only connect through nodes you host yourself or explicitly trust.
 
 More guides (in Chinese): [Self-hosting guide](docs/self-host.md) · [Public node protocol](docs/public-node.md) · [Plugin capabilities and host interfaces](docs/features.md) · [Verification guide](docs/verification.md) · [Release notes](docs/release-notes.md)
 

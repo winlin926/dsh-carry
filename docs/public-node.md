@@ -57,7 +57,7 @@
   "protocol": 2,
   "kind": "gateway",
   "name": "DeepSeek Harness",
-  "version": "0.7.1",
+  "version": "<当前版本>",
   "capabilities": ["pairing", "cache", "official-ui"],
   "node": {
     "id": "BuP9j9opu2CrWVV95h7bCuzbIxE0vjDnW0Vfjht5L6k",
@@ -76,7 +76,7 @@
   "protocol": 2,
   "kind": "service",
   "name": "我的节点",
-  "version": "0.7.1",
+  "version": "<当前版本>",
   "capabilities": ["pairing", "cache", "official-ui"],
   "node": {
     "id": "Di6lw5vsvhdLKYAG4LFOoPgX6mIfMoYOQ2Tz3oECWs0",
@@ -231,7 +231,7 @@ v1 文档的扁平 `hostId`/`fingerprint` 字段规则保持不变：`hostId` �
       "url": "https://node.example.com",
       "kind": "service",
       "name": "我的节点",
-      "version": "0.7.1",
+      "version": "<当前版本>",
       "protocol": 2,
       "capabilities": ["pairing", "cache", "official-ui"],
       "node": { "id": "…", "fingerprint": "…", "publicKey": "…" },
@@ -376,4 +376,4 @@ API（`PublicNodeConfig`）：`current`（getter）、`list()`、`add(input)`、
 - `protocol` 升级 = 破坏性变更；客户端遇到非 `1`/`2` 直接失败，不做降级猜测。仅支持 v1 的客户端无法添加 v2 服务节点；v2 网关保留扁平字段，旧客户端仍可添加网关节点。
 - 响应中**多出的字段被忽略**，服务端可先行添加新字段（但新能力必须等待 protocol 升级）。
 - 未知 `capabilities` 项导致客户端拒绝，因此能力白名单只能随 protocol 升版扩展。
-- 文档版本：v2（`protocol: 2`）；v1 规则见第 3 节。本文档随 0.7.1 发布：插件 `version` 与 `remote-server` 的 `nodeVersion` 均为 `0.7.1`。
+- 文档版本：v2（`protocol: 2`）；v1 规则见第 3 节。本文档自 0.7.1 起发布，协议字段随版本更新。

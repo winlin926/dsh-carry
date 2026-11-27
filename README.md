@@ -12,7 +12,7 @@
   简体中文 · <a href="https://github.com/winlin926/dsh-carry/blob/main/README.en.md">English</a>
 </p>
 
-`dsh-carry` 是 DeepSeek Harness（DSH）的远程控制插件。扫码配对后，你可以直接用手机浏览器接入电脑上正在运行的 DSH 实例，继续对话、审批工具请求、查看工作区文件或预览 HTML 页面；可用会话、模型与工具完全由电脑宿主提供。
+`dsh-carry` 是 DeepSeek Harness（DSH）的远程控制插件。扫码配对后，你可以直接用手机浏览器接入电脑上正在运行的 DSH 实例——继续对话、审批工具请求、查看工作区文件或预览 HTML 页面。可用会话、模型与工具完全由电脑端的宿主提供。
 
 <details>
 <summary><strong>查看实机录屏（26 秒 GIF）：回答提问卡片、查看工具输出、打开 HTML 预览</strong></summary>
@@ -82,7 +82,11 @@ dsh plugin --profile <profile> add @winlin926/dsh-carry@latest
 - **主机指纹校验**：通过公网首次配对时，手机与电脑会各自显示并核对主机指纹，确认连接到的是你自己的电脑。
 
 > **🔒 安全与信任边界：只批准你信任的设备。**
-> 已配对手机拥有接近本机操作 DSH 的权限。公网中继节点或内网穿透服务会终止 TLS 并转发请求，节点运营者可能看到传输内容；本插件不提供节点之上的端到端加密，项目方也不托管任何公共节点。请仅使用自己部署或明确信任的公网节点。
+>
+> - 已配对手机拥有接近本机操作 DSH 的权限。
+> - 公网中继节点或内网穿透服务会终止 TLS 并转发请求，节点运营者可能看到传输内容。
+> - 本插件不提供节点之上的端到端加密，项目方也不托管任何公共节点。
+> - 请仅使用自己部署或明确信任的公网节点。
 
 进一步阅读：[自托管部署指南](docs/self-host.md) · [公网节点协议](docs/public-node.md) · [插件能力与宿主接口](docs/features.md) · [测试指南](docs/verification.md) · [发布说明](docs/release-notes.md)
 
