@@ -2,8 +2,7 @@
 !package.json
 !src/
 !src/remote/
-!src/remote/node-api.ts
-!src/remote/tunnel-protocol.ts
+!src/remote/**
 !remote-server/
 !remote-server/package.json
 !remote-server/package-lock.json
