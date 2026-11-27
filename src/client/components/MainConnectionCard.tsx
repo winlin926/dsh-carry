@@ -315,7 +315,7 @@ export function MainConnectionCard(props: MainConnectionCardProps): React.ReactE
         </div>
       </div>
 
-      {shown === 'public' ? (
+      {state.local || shown === 'public' ? (
         <PublicNodesSection
           state={state}
           disabled={disabled}

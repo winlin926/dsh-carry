@@ -660,6 +660,7 @@ export class HostController {
         throw new Error('请先关闭远程连接，再修改公网域名。')
       await this.access.saveDomain(String(input.publicUrl))
       if (input.enablePublic === true) next.mode = nextDomain ? 'public' : 'lan'
+      else if (!nextDomain && next.mode === 'public' && this.currentNode()?.kind !== 'service') next.mode = 'lan'
     }
     if (input.proxy !== undefined) {
       const value = String(input.proxy).trim()
@@ -811,6 +812,7 @@ export class HostController {
         fingerprintGroups: fingerprintGroupsOf(this.options.hostIdentity.fingerprint),
       },
       requests: local ? this.pairing.requests() : [],
+      servicePairings: local ? (this.serviceNode?.status().pendingPairings ?? []) : [],
     }
   }
 
@@ -928,7 +930,6 @@ export class HostController {
       version: this.options.nodeVersion,
       gatewayPort: this.gateway?.port ?? 0,
       local,
-      direct: this.directHost?.state() ?? [],
       expiresAt: entry === 'public' && record?.kind === 'service' ? serviceTicket?.expiresAt : this.qr?.expiresAt,
       links,
       qr: links[0]?.url ? await this.qrImage(links[0].url) : undefined,

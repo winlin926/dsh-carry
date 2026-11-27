@@ -637,3 +637,26 @@ it('cancels unfinished startup when the plugin unloads', async () =>
     await starting
     await expect(fetch(`http://127.0.0.1:${opened}/`)).rejects.toThrow()
   }))
+
+it('saves a public domain without implicitly switching modes and resets public mode when cleared', () =>
+  withHost(async (command) => {
+    await command('preferences', { mode: 'lan' })
+    const started = await command('start')
+    expect('direct' in started).toBe(false)
+
+    const saved = await command('preferences', { publicUrl: 'https://dsh.example.com' })
+    expect(saved).toMatchObject({
+      mode: 'lan',
+      activeMode: 'lan',
+      enabled: true,
+      gatewayPort: started.gatewayPort,
+      publicUrl: 'https://dsh.example.com',
+    })
+    expect(saved.links[0]?.url).toBe(started.links[0]?.url)
+
+    await command('stop')
+    await command('preferences', { mode: 'public' })
+    expect((await command('status')).mode).toBe('public')
+    const cleared = await command('preferences', { publicUrl: '' })
+    expect(cleared).toMatchObject({ mode: 'lan', publicUrl: null })
+  }))

@@ -4,7 +4,7 @@ import * as Connection from '@deepseek-ai/dsh-client-connection'
 import * as Plugin from '../src/index.js'
 import { Gateway, MANAGE_PATH } from '../src/gateway.js'
 import { PUBLIC_PORT } from '../src/public-access.js'
-import { TUNNEL_PATH } from '../src/remote/tunnel-protocol.js'
+import { TUNNEL_PATH, encodeTunnelFrame, type TunnelFrame } from '../src/remote/tunnel-protocol.js'
 import { identityOfPublicKey } from '../src/host-identity.js'
 import type { PublicNodeIdentity } from '../src/public-node.js'
 import { randomBytes, generateKeyPairSync } from 'node:crypto'
@@ -134,6 +134,7 @@ interface FakeServiceNode {
   pairings: Array<{ authorization: string | undefined; body: Record<string, unknown> }>
   tickets: string[]
   unregistrations: Array<{ authorization: string | undefined; method: string; path: string }>
+  sendFrame: (frame: TunnelFrame) => void
   close: () => Promise<void>
 }
 
@@ -222,6 +223,10 @@ async function startFakeServiceNode(
     pairings,
     tickets,
     unregistrations,
+    sendFrame: (frame) => {
+      const encoded = encodeTunnelFrame(frame)
+      for (const ws of sockets) ws.send(encoded, { binary: true })
+    },
     close: async () => {
       for (const ws of sockets) {
         try {
@@ -887,3 +892,49 @@ it('clears gateway domain when switching to a service node or removing the activ
       listen.mockRestore()
     }
   }))
+
+it('surfaces pending service-node pairings in the requests polling endpoint', async () => {
+  const restoreTls = allowSelfSignedTls()
+  const fake = await startFakeServiceNode()
+  try {
+    await withHost(async ({ command }) => {
+      stubDiscoveryAndNetwork()
+      const added = await command('addPublicNode', { url: fake.origin })
+      await command('setCurrentPublicNode', { id: added.node.id })
+      await command('preferences', { mode: 'public' })
+      const listen = vi.spyOn(Gateway.prototype, 'listen').mockImplementation(async function (
+        this: Gateway,
+      ): Promise<number> {
+        this.port = 45871
+        return 45871
+      })
+      try {
+        await command('start')
+        await vi.waitFor(async () => expect((await command('status')).serviceNode?.connected).toBe(true), {
+          timeout: 8000,
+        })
+        fake.sendFrame({
+          t: 'pair.request',
+          requestId: 'svc-req-1',
+          clientName: 'Pixel Phone',
+          expiresAt: Date.now() + 60_000,
+        })
+        await vi.waitFor(async () => {
+          const requests = await command('requests')
+          expect(requests.servicePairings).toEqual([
+            { requestId: 'svc-req-1', deviceName: 'Pixel Phone', expiresAt: expect.any(Number) },
+          ])
+        })
+        const approved = await command('approveServicePairing', { id: 'svc-req-1' })
+        expect(approved.status).toBe(200)
+        expect((await command('requests')).servicePairings).toEqual([])
+      } finally {
+        await command('stop').catch(() => undefined)
+        listen.mockRestore()
+      }
+    })
+  } finally {
+    restoreTls()
+    await fake.close()
+  }
+})

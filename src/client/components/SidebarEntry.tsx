@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { command, type ClientLocale } from '../model.js'
+import { command, when, type ClientLocale, type ServicePairing } from '../model.js'
 import { RemoteControlPanel, type PanelProps } from '../RemoteControlPanel.js'
 import { PanelIcon, useText } from './Primitives.js'
 
@@ -7,6 +7,7 @@ interface Waiting {
   enabled: boolean
   node: { name: string; fingerprint: string; fingerprintGroups: string }
   requests: Array<{ id: string; name: string; via: 'lan' | 'public'; nodeConfirmed: boolean; expiresAt: number }>
+  servicePairings?: ServicePairing[]
 }
 
 /** Pairing approvals belong to the Host page; both gateway routes set the remote marker before mounting. */
@@ -40,29 +41,39 @@ function PairingPrompt({
   const [working, setWorking] = React.useState(false)
   const [error, setError] = React.useState('')
   const request = waiting.requests[0]
+  const servicePairing = request ? undefined : waiting.servicePairings?.[0]
+  const totalWaiting = waiting.requests.length + (waiting.servicePairings?.length ?? 0)
+  const activeKey = request ? `direct:${request.id}` : servicePairing ? `service:${servicePairing.requestId}` : ''
 
   React.useEffect(() => {
     const element = dialog.current
     if (!element) return
-    if (request && !element.open) {
+    if (activeKey && !element.open) {
       element.showModal()
       approveButton.current?.focus()
     }
-    if (!request && element.open) element.close()
-  }, [request])
+    if (!activeKey && element.open) element.close()
+  }, [activeKey])
 
-  const answer = async (action: 'approve' | 'reject') => {
-    if (!request) return
+  const answer = async (decision: 'approve' | 'reject') => {
+    if (!request && !servicePairing) return
     setWorking(true)
     setError('')
     // Approving confirms the same device name and host fingerprint the pairing page displayed; the
     // Host checks both again before the device cookie is issued.
     try {
-      await command(
-        action === 'approve'
-          ? { action, id: request.id, name: request.name, fingerprint: waiting.node.fingerprint }
-          : { action, id: request.id },
-      )
+      if (request) {
+        await command(
+          decision === 'approve'
+            ? { action: 'approve', id: request.id, name: request.name, fingerprint: waiting.node.fingerprint }
+            : { action: 'reject', id: request.id },
+        )
+      } else if (servicePairing) {
+        await command({
+          action: decision === 'approve' ? 'approveServicePairing' : 'rejectServicePairing',
+          id: servicePairing.requestId,
+        })
+      }
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : text('操作失败。', 'The request could not be processed.'))
     } finally {
@@ -78,16 +89,18 @@ function PairingPrompt({
       aria-labelledby="dsrc-pairing-title"
       onCancel={(event) => event.preventDefault()}
     >
-      {request ? (
+      {request || servicePairing ? (
         <div className="dsrc">
           <h2 id="dsrc-pairing-title" tabIndex={-1}>
             {text('新的配对请求', 'New pairing request')}
           </h2>
-          <p className="dsrc-prompt-device">{request.name}</p>
+          <p className="dsrc-prompt-device">{request ? request.name : servicePairing?.deviceName}</p>
           <p className="dsrc-note">
-            {request.via === 'public'
-              ? `${text('公网入口', 'Public entry')} · ${text('主机指纹', 'Host fingerprint')} ${waiting.node.fingerprintGroups} · ${request.nodeConfirmed ? text('手机已确认本机', 'Confirmed on the phone') : text('手机尚未确认本机', 'Waiting for phone confirmation')}`
-              : text('局域网配对请求', 'Local network pairing request')}
+            {request
+              ? request.via === 'public'
+                ? `${text('公网入口', 'Public entry')} · ${text('主机指纹', 'Host fingerprint')} ${waiting.node.fingerprintGroups} · ${request.nodeConfirmed ? text('手机已确认本机', 'Confirmed on the phone') : text('手机尚未确认本机', 'Waiting for phone confirmation')}`
+                : text('局域网配对请求', 'Local network pairing request')
+              : `${text('自托管公网节点', 'Self-hosted public node')} · ${text('过期时间', 'Expires')} ${when(servicePairing?.expiresAt ?? 0)}`}
           </p>
           <p className="dsrc-note">
             {text(
@@ -95,12 +108,9 @@ function PairingPrompt({
               'Check the device name. For a public connection, also compare the host fingerprint. Approval grants the same permissions as on this computer, including access to settings, credentials, and plugins. Decline requests you did not initiate.',
             )}
           </p>
-          {waiting.requests.length > 1 ? (
+          {totalWaiting > 1 ? (
             <p className="dsrc-note">
-              {text(
-                `还有 ${waiting.requests.length - 1} 个请求在等待。`,
-                `Other requests waiting: ${waiting.requests.length - 1}`,
-              )}
+              {text(`还有 ${totalWaiting - 1} 个请求在等待。`, `Other requests waiting: ${totalWaiting - 1}`)}
             </p>
           ) : null}
           {error ? (
@@ -145,6 +155,7 @@ export function SidebarEntry({ manager, locale }: PanelProps): React.ReactElemen
     enabled: false,
     node: { name: '', fingerprint: '', fingerprintGroups: '' },
     requests: [],
+    servicePairings: [],
   })
 
   React.useEffect(() => {
@@ -200,7 +211,7 @@ export function SidebarEntry({ manager, locale }: PanelProps): React.ReactElemen
   React.useEffect(() => watchLocalPairings(check), [check])
 
   const label = text('远程控制', 'Remote Control')
-  const pending = waiting.requests.length > 0
+  const pending = waiting.requests.length > 0 || (waiting.servicePairings?.length ?? 0) > 0
 
   return (
     <>

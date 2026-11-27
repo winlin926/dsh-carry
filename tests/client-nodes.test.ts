@@ -437,3 +437,21 @@ describe('command', () => {
     )
   })
 })
+
+describe('panel UX regressions', () => {
+  it('renders public nodes on the local host panel even before public entry is reachable', () => {
+    expect(SOURCE).toContain("{state.local || shown === 'public' ? (")
+  })
+
+  it('opens the tokenized pairing URL instead of bare base and saves domains without switching mode', () => {
+    expect(SOURCE).toContain('href={state.links[0].url}')
+    expect(SOURCE).not.toContain('href={state.links[0].base}')
+    expect(SOURCE).not.toContain('enablePublic: true')
+  })
+
+  it('guards QR refresh against pending service-node pairings and prompts for them in the sidebar', () => {
+    expect(SOURCE).toContain('state?.serviceNode?.pendingPairings.length')
+    expect(SOURCE).toContain('servicePairings?: ServicePairing[]')
+    expect(SOURCE).toContain("decision === 'approve' ? 'approveServicePairing' : 'rejectServicePairing'")
+  })
+})

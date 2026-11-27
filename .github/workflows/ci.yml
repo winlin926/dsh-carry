@@ -29,5 +29,28 @@ jobs:
       - run: pnpm build
       - run: npm pack --dry-run --ignore-scripts --json > package-manifest.json
       - run: node scripts/check-package.mjs package-manifest.json
-      - if: runner.os == 'Linux'
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build remote-server image
         run: docker build -f remote-server/Dockerfile -t dsh-remote-server:ci .
+      - name: Smoke test container
+        run: |
+          docker run -d --name dsh-ci -p 8787:8787 dsh-remote-server:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8787/healthz -o /tmp/healthz; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q '"ok":true' /tmp/healthz
+          curl -fsS http://127.0.0.1:8787/ | grep -qi '<!doctype html>'
+          test "$(docker inspect -f '{{.Config.User}}' dsh-ci)" = node
+      - name: Container logs
+        if: failure()
+        run: docker logs dsh-ci || true
+      - name: Cleanup
+        if: always()
+        run: docker rm -f dsh-ci || true

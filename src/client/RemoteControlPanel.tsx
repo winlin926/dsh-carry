@@ -242,8 +242,9 @@ export function RemoteControlPanel({ manager, locale }: PanelProps): React.React
 
   // A renewed one-time pairing ticket does not invalidate already paired devices.
   const renewing = React.useRef(false)
+  const pendingPairingsCount = (state?.requests.length ?? 0) + (state?.serviceNode?.pendingPairings.length ?? 0)
   React.useEffect(() => {
-    if (!state?.enabled || !expired || state.busy || acting.current || renewing.current || state.requests.length) return
+    if (!state?.enabled || !expired || state.busy || acting.current || renewing.current || pendingPairingsCount) return
     renewing.current = true
     const ticket = ++revision.current
     void command({ action: 'refresh' })
@@ -256,7 +257,7 @@ export function RemoteControlPanel({ manager, locale }: PanelProps): React.React
       .finally(() => {
         renewing.current = false
       })
-  }, [state, expired])
+  }, [state, expired, pendingPairingsCount])
 
   const setPublicEnabled = async (publicEnabled: boolean) => {
     const mode = publicEnabled ? 'public' : 'lan'
@@ -277,7 +278,7 @@ export function RemoteControlPanel({ manager, locale }: PanelProps): React.React
   }
 
   const refreshCode = () => {
-    if (state?.requests.length) {
+    if (pendingPairingsCount) {
       setNotice(
         text(
           '还有配对请求在等待确认，请先处理后再刷新二维码。',

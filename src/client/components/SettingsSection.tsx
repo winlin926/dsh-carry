@@ -212,7 +212,7 @@ export function SettingsSection({
                 className="dsrc-button"
                 disabled={disabled || !state.local || !domainDirty || domainInvalid || state.activeMode === 'public'}
                 onClick={() => {
-                  void act('preferences', { publicUrl: domainDraft.trim(), enablePublic: true }).then((saved) => {
+                  void act('preferences', { publicUrl: domainDraft.trim() }).then((saved) => {
                     if (saved) setDomain(null)
                   })
                 }}
@@ -377,8 +377,8 @@ export function SettingsSection({
           <p className="dsrc-note">仅用于电脑的域名检测和证书请求，不改变手机连接。</p>
           <div className="dsrc-field dsrc-browser-entry">
             <span className="dsrc-field-label">手机入口</span>
-            {state.links[0]?.base ? (
-              <a className="dsrc-button" href={state.links[0].base} target="_blank" rel="noreferrer">
+            {state.links[0]?.url ? (
+              <a className="dsrc-button" href={state.links[0].url} target="_blank" rel="noreferrer">
                 在浏览器打开
               </a>
             ) : (
