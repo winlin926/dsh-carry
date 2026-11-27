@@ -36,7 +36,8 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=24.9.0"
+    "node": ">=24.9.0",
+    "dsh": ">=0.2.2-rc.1 <0.3.0-0"
   },
   "packageManager": "pnpm@10.28.0",
   "publishConfig": {
