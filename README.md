@@ -12,7 +12,7 @@
   简体中文 · <a href="https://github.com/winlin926/dsh-carry/blob/main/README.en.md">English</a>
 </p>
 
-`dsh-carry` 是 DeepSeek Harness（DSH）的远程控制插件。扫码配对后，你可以直接用手机浏览器接入电脑上正在运行的 DSH 实例——继续对话、审批工具请求、查看工作区文件或预览 HTML 页面。可用会话、模型与工具完全由电脑端的宿主提供。
+`dsh-carry` 是 DeepSeek Harness（DSH）的远程控制插件，让你用手机浏览器接入电脑上正在运行的 DSH 实例。扫码配对后即可继续会话、审批工具请求、查看工作区文件或预览 HTML 页面——可用的会话、模型与工具完全由电脑端宿主决定，手机只是另一块屏幕。
 
 <details>
 <summary><strong>查看实机录屏（26 秒 GIF）：回答提问卡片、查看工具输出、打开 HTML 预览</strong></summary>
@@ -28,15 +28,15 @@
 在需要被远程访问的电脑上安装插件：
 
 - **DSH 桌面版**：打开「插件 → 添加插件」，搜索 `@winlin926/dsh-carry` 安装。
-- **DSH CLI / `dsh web`**：运行以下命令安装（将 `<profile>` 替换为你的配置名称，例如 `web`），安装后重启或重载宿主：
+- **DSH CLI / `dsh web`**：运行以下命令安装，安装后重启或重载宿主（将 `default` 替换为你的配置名，常见值为 `default` 或 `web`，可在 DSH 配置中查看）：
 
 ```sh
-dsh plugin --profile <profile> add @winlin926/dsh-carry@latest
+dsh plugin --profile default add @winlin926/dsh-carry@latest
 ```
 
 首次连接只需三步：
 
-1. 在电脑端 DSH 侧栏打开「远程控制」，点击「开启远程连接」（首次配对请确保手机与电脑处于同一 Wi‑Fi）。
+1. 在电脑端 DSH 侧栏打开「远程控制」，点击「开启远程连接」。**首次配对请确保手机与电脑处于同一 Wi‑Fi。**
 2. 用手机扫描面板上的二维码，在电脑弹出的确认框核对设备名后点击「允许连接」。
 3. 配对完成后即可在手机浏览器中继续已有会话；之后可随时在电脑「已授权设备」列表中重命名或撤销任意设备。
 
@@ -55,23 +55,32 @@ dsh plugin --profile <profile> add @winlin926/dsh-carry@latest
   <tr><th>使用场景</th><th>在手机上的能力</th></tr>
   <tr><td>离开工位，长任务仍在运行</td><td>打开电脑上的会话，实时查看回复并继续发送后续指令。</td></tr>
   <tr><td>工具请求正在等待授权</td><td>直接在宿主同步界面中审查详情并决定是否批准执行。</td></tr>
-  <tr><td>需要核对生成产物或网页</td><td>点击工作区文件链接下载查看（最大 48 MiB），或直接预览 HTML 页面。</td></tr>
+  <tr><td>需要核对生成产物或网页</td><td>点击工作区文件链接直接下载，或在浏览器中预览 HTML 页面。</td></tr>
   <tr><td>同时配置了公网与局域网</td><td>公网访问且同处局域网时自动建立 WebRTC 直连，主线波动时无感切换、无需重新扫码。</td></tr>
 </table>
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-boot.png" width="30%" alt="启动页预览，顶部可选主题，中央显示插件检查进度" />
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-session.jpg" width="30%" alt="手机浏览器中的 DSH 新会话" />
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-chat.jpg" width="30%" alt="手机上已有的对话和消息输入框" />
-</p>
-<p align="center">启动页预览 · 新会话 · 继续对话</p>
+<details>
+<summary><strong>查看手机端截图（6 张）</strong></summary>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-tools.jpg" width="30%" alt="手机上的工作区工具入口" />
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-html-preview.jpg" width="30%" alt="手机上的工作区 HTML 预览" />
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-settings.png" width="30%" alt="手机上的 DSH 通用设置" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-boot.png" width="45%" alt="启动页预览，顶部可选主题，中央显示插件检查进度" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-session.jpg" width="45%" alt="手机浏览器中的 DSH 新会话" />
 </p>
-<p align="center">工作区工具 · HTML 预览 · 设置</p>
+<p align="center">启动页预览 · 新会话</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-chat.jpg" width="45%" alt="手机上已有的对话和消息输入框" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-tools.jpg" width="45%" alt="手机上的工作区工具入口" />
+</p>
+<p align="center">继续对话 · 工作区工具</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-html-preview.jpg" width="45%" alt="手机上的工作区 HTML 预览" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-settings.png" width="45%" alt="手机上的 DSH 通用设置" />
+</p>
+<p align="center">HTML 预览 · 设置</p>
+
+</details>
 
 ## 🌐 离开同一 Wi-Fi 后怎么连？
 

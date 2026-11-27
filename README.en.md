@@ -12,7 +12,7 @@
   <a href="https://github.com/winlin926/dsh-carry/blob/main/README.md">简体中文</a> · English
 </p>
 
-`dsh-carry` is a remote-control plugin for DeepSeek Harness (DSH). Scan a QR code from your phone browser to attach directly to the DSH instance running on your computer—continue conversations, review tool approvals, inspect workspace files, and open live HTML previews. Available sessions, models, and tools always come from your host.
+`dsh-carry` is a remote-control plugin for DeepSeek Harness (DSH) that lets you reach your running DSH instance from a phone browser. After a one-time QR scan pairing, you can continue conversations, approve tool calls, download workspace files, and preview HTML outputs—everything served directly by your host computer.
 
 <details>
 <summary><strong>Show the phone recording (26-second GIF): answer a question card, watch a tool run, open an HTML preview</strong></summary>
@@ -28,15 +28,15 @@
 Install the plugin on the computer you want to reach:
 
 - **DSH Desktop**: Open **Plugins → Add plugin** and search for `@winlin926/dsh-carry`.
-- **DSH CLI / `dsh web`**: Run the command below (replace `<profile>` with your profile name, e.g. `web`), then restart or reload DSH:
+- **DSH CLI / `dsh web`**: Run the command below (replace `default` with your profile name if different—common values are `default` or `web`; check your DSH config), then restart or reload DSH:
 
 ```sh
-dsh plugin --profile <profile> add @winlin926/dsh-carry@latest
+dsh plugin --profile default add @winlin926/dsh-carry@latest
 ```
 
 Pair in three steps:
 
-1. Open **Remote Control** in the DSH sidebar on your computer and click **Enable Remote Control** (for your first connection, put both devices on the same Wi‑Fi network).
+1. Open **Remote Control** in the DSH sidebar on your computer and click **Enable Remote Control**. **For your first pairing, make sure your phone and computer are on the same Wi‑Fi network.**
 2. Scan the QR code on the panel with your phone, confirm the device name on the desktop prompt, and click **Allow connection**.
 3. Resume any existing session in your phone browser; you can rename or revoke paired devices at any time under **Authorized devices** on your computer.
 
@@ -55,23 +55,32 @@ Need access outside your local network? See [Connecting from another network](#-
   <tr><th>When…</th><th>On your phone</th></tr>
   <tr><td>A long task is still running after you step away</td><td>Open the same session, follow streaming replies, and send follow-ups.</td></tr>
   <tr><td>A tool call is waiting for confirmation</td><td>Inspect the request in the synced host UI and approve or decline it.</td></tr>
-  <tr><td>You want to review generated files or pages</td><td>Download workspace files (up to 48 MiB) or preview HTML outputs in the browser.</td></tr>
+  <tr><td>You want to review generated files or pages</td><td>Download workspace files directly or preview HTML outputs in the browser.</td></tr>
   <tr><td>Both public and LAN routes are configured</td><td>Establish a background LAN WebRTC channel automatically and fail over without re-scanning.</td></tr>
 </table>
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-boot.png" width="30%" alt="Boot screen preview with a theme selector while DSH checks plugins" />
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-session.jpg" width="30%" alt="A new DSH session in the phone browser" />
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-chat.jpg" width="30%" alt="An existing conversation with its message input on the phone" />
-</p>
-<p align="center">Boot screen preview · New session · Ongoing conversation</p>
+<details>
+<summary><strong>Show phone screenshots (6 images)</strong></summary>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-tools.jpg" width="30%" alt="Workspace tools on the phone" />
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-html-preview.jpg" width="30%" alt="A workspace HTML preview on the phone" />
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-settings.png" width="30%" alt="DSH general settings on the phone" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-boot.png" width="45%" alt="Boot screen preview with a theme selector while DSH checks plugins" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-session.jpg" width="45%" alt="A new DSH session in the phone browser" />
 </p>
-<p align="center">Workspace tools · HTML preview · Settings</p>
+<p align="center">Boot screen preview · New session</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-chat.jpg" width="45%" alt="An existing conversation with its message input on the phone" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-tools.jpg" width="45%" alt="Workspace tools on the phone" />
+</p>
+<p align="center">Ongoing conversation · Workspace tools</p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-html-preview.jpg" width="45%" alt="A workspace HTML preview on the phone" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-settings.png" width="45%" alt="DSH general settings on the phone" />
+</p>
+<p align="center">HTML preview · Settings</p>
+
+</details>
 
 ## 🌐 Connecting from another network
 
@@ -88,7 +97,7 @@ Follow the [SakuraFrp public-access walkthrough (Chinese)](docs/public-access-sa
 > - This plugin does not add end-to-end encryption on top of the relay, and the maintainers operate no public servers.
 > - Only connect through nodes you host yourself or explicitly trust.
 
-More guides (in Chinese): [Self-hosting guide](docs/self-host.md) · [Public node protocol](docs/public-node.md) · [Plugin capabilities and host interfaces](docs/features.md) · [Verification guide](docs/verification.md) · [Release notes](docs/release-notes.md)
+More guides: [Self-hosting guide](docs/self-host.md) · [Public node protocol](docs/public-node.md) · [Plugin capabilities and host interfaces](docs/features.md) · [Verification guide](docs/verification.md) · [Release notes](docs/release-notes.md) *(all in Chinese)*
 
 ## 📄 Credits and license
 

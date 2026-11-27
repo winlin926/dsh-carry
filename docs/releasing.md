@@ -41,9 +41,15 @@ npm --prefix remote-server run typecheck
 pnpm test
 npm --prefix remote-server test
 pnpm build
+# 可选：确认 lib/ 产物大小未异常增大（参考值约 320 KiB）
+# du -sh lib/   # Linux/macOS
+# (Get-ChildItem lib | Measure-Object -Sum Length).Sum / 1KB   # PowerShell
 npm pack --dry-run --ignore-scripts --json > package-manifest.json
 node scripts/check-package.mjs package-manifest.json
+# Windows PowerShell:
 Remove-Item -LiteralPath package-manifest.json
+# Linux/macOS (CI):
+# rm package-manifest.json
 ```
 
 按影响范围运行[测试指南](verification.md)，更新 [release-notes.md](release-notes.md)。检查 `git diff --check` 和 `git status --short`，只提交发行所需的源文件、测试与文档。
