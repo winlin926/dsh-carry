@@ -513,6 +513,8 @@ export function RemoteControlPanel({ manager, locale }: PanelProps): React.React
               domainInput={domainInput}
               disabled={disabled}
               workingAction={workingAction}
+              feedback={feedback}
+              copy={copy}
               setPublicEnabled={setPublicEnabled}
               act={act}
               locale={locale}

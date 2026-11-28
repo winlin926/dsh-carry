@@ -97,6 +97,14 @@ dsh plugin --profile default add @winlin926/dsh-carry@latest
 > - 本插件不提供节点之上的端到端加密，项目方也不托管任何公共节点。
 > - 请仅使用自己部署或明确信任的公网节点。
 
+<details>
+<summary><strong>常见问题：SSH 隧道与远端 Linux 服务器</strong></summary>
+
+- **支持 SSH 连接吗？** 手机直接用浏览器访问，不需要装 SSH 客户端；若已有 VPS，可用 `ssh -R 127.0.0.1:43128:127.0.0.1:43128` 配合 Caddy 接入（见 [Caddy VPS 教程](docs/public-access-caddy.md)）。
+- **能连远程 Linux 服务器上的 DSH 吗？** 直接在那台 Linux 服务器上安装本插件并扫码即可。
+
+</details>
+
 进一步阅读：[自托管部署指南](docs/self-host.md) · [公网节点协议](docs/public-node.md) · [插件能力与宿主接口](docs/features.md) · [测试指南](docs/verification.md) · [发布说明](docs/release-notes.md)
 
 ## 📄 致谢与许可

@@ -91,6 +91,7 @@ export const CSS = `
 .dsrc-pair-link .dsrc-button{min-height:30px;padding:3px 9px;font-size:12px}
 .dsrc-networks{margin-top:8px}
 .dsrc-networks summary{min-height:26px;font-size:12px;font-weight:400;color:var(--rc-muted)}
+.dsrc-networks .dsrc-summary-value{min-width:0}
 .dsrc-alt-links{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;padding-top:6px}
 .dsrc-address-button{max-width:100%;height:auto;min-height:28px;padding:2px 8px;font:11px/18px ui-monospace,Consolas,monospace;white-space:normal;overflow-wrap:anywhere;text-align:left}
 .dsrc-panel-message{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:12px;padding:9px 11px;border:1px solid color-mix(in srgb,var(--rc-indigo) 18%,var(--rc-line));border-radius:9px;background:var(--rc-indigo-soft);color:var(--rc-muted);font-size:12px;overflow-wrap:anywhere}
@@ -164,6 +165,11 @@ export const CSS = `
 .dsrc-status-note[data-tone=warn] .dsrc-status-value{color:var(--rc-warning)}
 .dsrc-certificate{padding-top:12px;border-top:1px solid var(--rc-line)}
 .dsrc-certificate>.dsrc-setting-row{margin-top:0}
+.dsrc-cmd-list{display:flex;flex-direction:column;gap:8px;padding-top:8px}
+.dsrc-cmd-item{display:flex;flex-direction:column;gap:4px;min-width:0}
+.dsrc-cmd-row{display:flex;align-items:center;gap:8px;min-width:0}
+.dsrc-cmd-code{flex:1;min-width:0;padding:5px 8px;border-radius:7px;background:var(--rc-fill);color:var(--rc-ink);font:11px/18px ui-monospace,Consolas,monospace;overflow-wrap:anywhere;word-break:break-all}
+.dsrc-cmd-row .dsrc-button{flex:none;min-height:28px;padding:3px 9px;font-size:12px}
 .dsrc-check{display:flex;align-items:flex-start;gap:9px;cursor:pointer;margin-top:13px;padding-top:12px;border-top:1px solid var(--rc-line)}
 .dsrc-check input{width:16px;height:16px;flex:none;margin:2px 0 0;accent-color:var(--rc-accent)}
 .dsrc-check-copy{display:block;min-width:0}
@@ -261,9 +267,9 @@ export const CSS = `
 .dsrc-node>.dsrc-actions{justify-content:flex-end;width:100%;margin-left:0}
 }
 @container(max-width:350px){
-.dsrc-pair-link{align-items:stretch;flex-direction:column}
+.dsrc-pair-link,.dsrc-cmd-row{align-items:stretch;flex-direction:column}
 .dsrc-link{width:100%;flex:none}
-.dsrc-pair-link .dsrc-action-with-feedback{align-self:flex-end}
+.dsrc-pair-link .dsrc-action-with-feedback,.dsrc-cmd-row .dsrc-action-with-feedback{align-self:flex-end}
 }
 @media(max-width:560px),(pointer:coarse){
 .dsrc-dialog{padding:16px}
@@ -284,7 +290,7 @@ export const CSS = `
 .dsrc-muted,.dsrc-note,.dsrc-sub,.dsrc-summary-value,.dsrc-field-label,.dsrc-field>label,.dsrc-status-note,.dsrc-connection-state p,.dsrc-inline-notice,.dsrc-panel-message{font-size:14px}
 .dsrc-connection-state strong{font-size:16px}
 .dsrc-setting-kicker{font-size:12px}
-.dsrc-code-refresh,.dsrc-pair-link .dsrc-button,.dsrc-notice-action{min-height:44px;font-size:14px}
+.dsrc-code-refresh,.dsrc-pair-link .dsrc-button,.dsrc-cmd-row .dsrc-button,.dsrc-notice-action{min-height:44px;font-size:14px}
 .dsrc-placeholder{font-size:14px}
 .dsrc-node-meta,.dsrc-node-error,.dsrc-service-state{font-size:14px}
 }

@@ -69,6 +69,12 @@ export function PublicNodesSection({
         <h3>{text('公网节点', 'Public nodes')}</h3>
         {list.length ? <span className="dsrc-count">{String(list.length)}</span> : null}
       </div>
+      <p className="dsrc-note">
+        {text(
+          '用于添加与切换自托管中继（remote-server）；Cloudflare、Tailscale、Caddy 或 SSH -R 等自建隧道网关请在右侧「连接设置」填固定域名。',
+          'Add and switch self-hosted relays (remote-server) here. For Cloudflare, Tailscale, Caddy, SSH -R, or frp, configure Fixed public domain in Connection settings.',
+        )}
+      </p>
       {service && serviceState ? (
         <div className="dsrc-service-state" data-tone={serviceState.tone}>
           <span className="dsrc-service-dot" aria-hidden="true" />

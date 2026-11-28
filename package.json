@@ -53,7 +53,12 @@
     "pairing",
     "qrcode",
     "acme",
-    "frpc"
+    "frpc",
+    "tailscale",
+    "cloudflare-tunnel",
+    "caddy",
+    "self-hosted",
+    "webrtc"
   ],
   "dsh": {
     "engines": {

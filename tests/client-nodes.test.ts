@@ -446,9 +446,20 @@ describe('panel UX regressions', () => {
     expect(SOURCE).not.toContain("{state.local || shown === 'public' ? (")
   })
 
-  it('shows self-hosted service-node status in the settings summary and collapses frpc config when no custom domain is set', () => {
+  it('shows self-hosted service-node status in the settings summary and collapses fixed-domain gateway config when no custom domain is set', () => {
     expect(SOURCE).toContain('isServiceNode && currentNode')
     expect(SOURCE).toContain('isServiceNode && !publicUrl')
+  })
+
+  it('binds helper tunnel commands to state.publicPort without ephemeral quick tunnels or 3rd-level details nesting', () => {
+    expect(SOURCE).toContain('const port = state.publicPort')
+    expect(SOURCE).toContain('cloudflared tunnel run <tunnel-name>')
+    expect(SOURCE).not.toContain('cloudflared tunnel --url')
+    expect(SOURCE).toContain(`tailscale serve --bg http://127.0.0.1:\${port}`)
+    expect(SOURCE).toContain(`tailscale funnel --bg http://127.0.0.1:\${port}`)
+    expect(SOURCE).toContain('if (certificateAttention) setCertOpen(true)')
+    expect(SOURCE).toContain('collapsedGateway ? (')
+    expect(SOURCE).toContain('Fixed public domain in Connection settings')
   })
 
   it('opens the tokenized pairing URL instead of bare base and saves domains without switching mode', () => {

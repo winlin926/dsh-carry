@@ -11,7 +11,7 @@ import {
 import { createOutboundProxy, type OutboundProxy } from './outbound-proxy.js'
 import { isPublicNodeProtocol, nodeIdentityOf, detectPublicNode, type PublicNodeDetection } from './public-node.js'
 
-/** frpc forwards the public domain to this fixed port; a test run may point it elsewhere. */
+/** Reverse proxies or tunnels forward the public domain to this fixed port; a test run may point it elsewhere. */
 export const PUBLIC_PORT = (() => {
   const override = Number(process.env.DSH_RC_PUBLIC_PORT)
   return Number.isInteger(override) && override > 0 && override < 65536 ? override : 43128

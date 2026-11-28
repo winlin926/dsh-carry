@@ -105,6 +105,14 @@ docker compose up -d --build
 > - This plugin does not add end-to-end encryption on top of the relay, and the maintainers operate no public servers.
 > - Only connect through nodes you host yourself or explicitly trust.
 
+<details>
+<summary><strong>FAQ: SSH tunnels &amp; remote Linux hosts</strong></summary>
+
+- **Does it require or support SSH?** Phones connect via browser with no SSH app needed; if you prefer tunneling over a VPS, `ssh -R 127.0.0.1:43128:127.0.0.1:43128` with Caddy works out of the box ([Caddy VPS guide](docs/public-access-caddy.en.md)).
+- **What if DSH runs on a remote Linux server?** Install `dsh-carry` directly on that server and pair from your phone.
+
+</details>
+
 More guides: [Self-hosting guide](docs/self-host.en.md) · [Public node protocol (Chinese)](docs/public-node.md) · [Plugin capabilities (Chinese)](docs/features.md) · [Verification guide (Chinese)](docs/verification.md) · [Release notes (Chinese)](docs/release-notes.md)
 
 ## 📄 Credits and license

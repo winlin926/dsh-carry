@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { nodeHost, when, type ClientLocale, type PublicNode, type Status } from '../model.js'
-import { CardIcon, GearIcon, StatusNote, useText } from './Primitives.js'
+import { ActionFeedback, CardIcon, GearIcon, StatusNote, useText } from './Primitives.js'
 
 interface SettingsSectionProps {
   state: Status
@@ -11,6 +11,8 @@ interface SettingsSectionProps {
   domainInput: React.RefObject<HTMLInputElement>
   disabled: boolean
   workingAction: string
+  feedback: { target: string; text: string } | null
+  copy: (value: string, target: string) => Promise<void>
   setPublicEnabled: (enabled: boolean) => Promise<void>
   act: (action: string, fields?: Record<string, unknown>) => Promise<boolean>
   locale?: ClientLocale
@@ -25,6 +27,8 @@ export function SettingsSection({
   domainInput,
   disabled,
   workingAction,
+  feedback,
+  copy,
   setPublicEnabled,
   act,
   locale,
@@ -32,6 +36,14 @@ export function SettingsSection({
   const text = useText(locale)
   const [proxy, setProxy] = React.useState<string | null>(null)
   const [domain, setDomain] = React.useState<string | null>(null)
+  const [certOpen, setCertOpen] = React.useState(false)
+
+  const certificate = state.certificate
+  const certificateExpired = !!certificate?.expiresAt && certificate.expiresAt <= Date.now()
+  const certificateAttention = !!(certificate?.error || certificateExpired || certificate?.pending)
+  React.useEffect(() => {
+    if (certificateAttention) setCertOpen(true)
+  }, [certificateAttention])
 
   if (!state.local) {
     return (
@@ -105,8 +117,6 @@ export function SettingsSection({
     }
   }
 
-  const certificate = state.certificate
-  const certificateExpired = !!certificate?.expiresAt && certificate.expiresAt <= Date.now()
   const certificateLabel = !publicUrl
     ? text('配置域名后可管理', 'Available after setting a domain')
     : !certificate
@@ -116,7 +126,7 @@ export function SettingsSection({
         : certificateExpired
           ? text('证书已过期', 'Certificate expired')
           : certificate.selfSigned
-            ? text('frpc 自签证书', 'frpc self-signed')
+            ? text('自签占位证书（frpc）', 'Self-signed placeholder (frpc)')
             : certificate.expiresAt
               ? text(
                   `有效至 ${when(certificate.expiresAt, locale)}`,
@@ -135,6 +145,120 @@ export function SettingsSection({
       : publicUrl
         ? text('域名已配置', 'Domain configured')
         : text('域名未配置', 'No domain set'))
+
+  const port = state.publicPort
+  const collapsedGateway = isServiceNode && !publicUrl
+  const tunnelCommands = [
+    {
+      id: 'cmd-ssh',
+      label: text('SSH 反向隧道（搭配 VPS Caddy）', 'SSH reverse tunnel (with VPS Caddy)'),
+      cmd: `ssh -NT -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -R 127.0.0.1:${port}:127.0.0.1:${port} user@your-vps`,
+    },
+    {
+      id: 'cmd-cf',
+      label: text(
+        `Cloudflare Named Tunnel（转发到 http://127.0.0.1:${port}）`,
+        `Cloudflare Named Tunnel (route to http://127.0.0.1:${port})`,
+      ),
+      cmd: 'cloudflared tunnel run <tunnel-name>',
+    },
+    {
+      id: 'cmd-ts-serve',
+      label: text('Tailscale Serve（仅 Tailnet 内）', 'Tailscale Serve (Tailnet only)'),
+      cmd: `tailscale serve --bg http://127.0.0.1:${port}`,
+    },
+    {
+      id: 'cmd-ts-funnel',
+      label: text('Tailscale Funnel（公网 HTTPS）', 'Tailscale Funnel (public HTTPS)'),
+      cmd: `tailscale funnel --bg http://127.0.0.1:${port}`,
+    },
+  ]
+
+  const commandsTitle = text(`常用反代 / 隧道接入命令（端口 ${port}）`, `Common tunnel & proxy commands (port ${port})`)
+  const commandsBody = (
+    <div className="dsrc-cmd-list">
+      {tunnelCommands.map((item) => (
+        <div key={item.id} className="dsrc-cmd-item">
+          <span className="dsrc-field-label">{item.label}</span>
+          <div className="dsrc-cmd-row">
+            <code className="dsrc-cmd-code">{item.cmd}</code>
+            <div className="dsrc-action-with-feedback">
+              <button
+                type="button"
+                className="dsrc-button"
+                onClick={() => {
+                  void copy(item.cmd, item.id)
+                }}
+              >
+                {text('复制', 'Copy')}
+              </button>
+              <ActionFeedback feedback={feedback} target={item.id} />
+            </div>
+          </div>
+        </div>
+      ))}
+      <p className="dsrc-note">
+        {text(
+          '命令需在电脑终端运行，插件不保存 SSH 密钥或服务器凭据。',
+          'Run these in your computer terminal; this plugin does not store SSH keys or server credentials.',
+        )}
+      </p>
+    </div>
+  )
+
+  const certTitle = text(
+    '本机 HTTPS 证书（仅 SakuraFrp 等自管证书需要）',
+    'Local HTTPS certificate (self-managed / SakuraFrp)',
+  )
+  const certificateBody = (
+    <>
+      <p className="dsrc-note">
+        {text(
+          'Cloudflare Tunnel、Tailscale 与 Caddy 反代会自动托管 HTTPS，无需在此申请。',
+          'Cloudflare Tunnel, Tailscale, and Caddy manage HTTPS automatically; no request is needed here.',
+        )}
+      </p>
+      <div className="dsrc-setting-row">
+        <StatusNote
+          label={text('HTTPS 证书', 'HTTPS certificate')}
+          value={certificateLabel}
+          tone={
+            certificateExpired || certificate?.error
+              ? 'danger'
+              : certificate?.pending
+                ? 'warn'
+                : certificate?.expiresAt && !certificate.selfSigned
+                  ? 'ok'
+                  : 'neutral'
+          }
+        />
+        <button
+          type="button"
+          className="dsrc-button"
+          disabled={disabled || !publicUrl || !!certificate?.pending || !state.enabled || state.activeMode !== 'public'}
+          title={
+            !state.enabled || state.activeMode !== 'public'
+              ? text('开启公网连接后可申请证书', 'Enable public connection first to request a certificate')
+              : undefined
+          }
+          onClick={() => {
+            void act('certificate')
+          }}
+        >
+          {certificate?.pending || workingAction === 'certificate'
+            ? text('正在申请…', 'Requesting…')
+            : certificateExpired
+              ? text('立即续期', 'Renew now')
+              : certificate?.expiresAt
+                ? text('申请 / 续期证书', 'Request / renew')
+                : text('申请证书', 'Request certificate')}
+        </button>
+      </div>
+      {certificate?.error ? (
+        <p className="dsrc-error">{`${text('证书错误：', 'Certificate error: ')}${certificate.error}`}</p>
+      ) : null}
+    </>
+  )
 
   const gatewayConfig = (
     <>
@@ -178,8 +302,8 @@ export function SettingsSection({
           {state.activeMode === 'public'
             ? text('如需修改域名，请先关闭远程连接。', 'Disable Remote Control before changing the domain.')
             : text(
-                `将 frpc 的 80 / 443 转发到本机端口 ${state.publicPort}。`,
-                `Forward frpc ports 80 / 443 to local port ${state.publicPort}.`,
+                `将反代或隧道（Cloudflare / Tailscale / Caddy / SSH -R / frp）转发到本机端口 ${port}。`,
+                `Forward your reverse proxy or tunnel (Cloudflare, Tailscale, Caddy, SSH -R, or frp) to local port ${port}.`,
               )}
         </p>
       </div>
@@ -212,49 +336,38 @@ export function SettingsSection({
         />
       </div>
 
-      <div className="dsrc-field dsrc-certificate">
-        <div className="dsrc-setting-row">
-          <StatusNote
-            label={text('HTTPS 证书', 'HTTPS certificate')}
-            value={certificateLabel}
-            tone={
-              certificateExpired || certificate?.error
-                ? 'danger'
-                : certificate?.pending
-                  ? 'warn'
-                  : certificate?.expiresAt && !certificate.selfSigned
-                    ? 'ok'
-                    : 'neutral'
-            }
-          />
-          <button
-            type="button"
-            className="dsrc-button"
-            disabled={
-              disabled || !publicUrl || !!certificate?.pending || !state.enabled || state.activeMode !== 'public'
-            }
-            title={
-              !state.enabled || state.activeMode !== 'public'
-                ? text('开启公网连接后可申请证书', 'Enable public connection first to request a certificate')
-                : undefined
-            }
-            onClick={() => {
-              void act('certificate')
-            }}
+      {collapsedGateway ? (
+        <>
+          <div className="dsrc-field">
+            <span className="dsrc-field-label">{commandsTitle}</span>
+            {commandsBody}
+          </div>
+          <div className="dsrc-field dsrc-certificate">
+            <span className="dsrc-field-label">{certTitle}</span>
+            {certificateBody}
+          </div>
+        </>
+      ) : (
+        <>
+          <details className="dsrc-networks">
+            <summary>{commandsTitle}</summary>
+            {commandsBody}
+          </details>
+          <details
+            className="dsrc-networks"
+            open={certOpen}
+            onToggle={(event) => setCertOpen(event.currentTarget.open)}
           >
-            {certificate?.pending || workingAction === 'certificate'
-              ? text('正在申请…', 'Requesting…')
-              : certificateExpired
-                ? text('立即续期', 'Renew now')
-                : certificate?.expiresAt
-                  ? text('申请 / 续期证书', 'Request / renew')
-                  : text('申请证书', 'Request certificate')}
-          </button>
-        </div>
-        {certificate?.error ? (
-          <p className="dsrc-error">{`${text('证书错误：', 'Certificate error: ')}${certificate.error}`}</p>
-        ) : null}
-      </div>
+            <summary>
+              <span>{certTitle}</span>
+              <span className={`dsrc-summary-value${certificateAttention ? ' dsrc-needs-attention' : ''}`}>
+                {certificateLabel}
+              </span>
+            </summary>
+            <div className="dsrc-field">{certificateBody}</div>
+          </details>
+        </>
+      )}
     </>
   )
 
@@ -342,9 +455,15 @@ export function SettingsSection({
           <div className="dsrc-setting-heading">
             <h3>{text('公网连接', 'Public connection')}</h3>
             <span className="dsrc-setting-kicker">
-              {isServiceNode ? text('自托管中继', 'Self-hosted relay') : text('固定域名与证书', 'Fixed domain & TLS')}
+              {isServiceNode ? text('自托管中继', 'Self-hosted relay') : text('固定公网域名', 'Fixed public domain')}
             </span>
           </div>
+          <p className="dsrc-note">
+            {text(
+              '自托管中继在左侧「公网节点」管理；Cloudflare、Tailscale、Caddy 或 SSH -R 等自建隧道网关在此配置固定域名。',
+              'Manage self-hosted relays under Public nodes on the left; configure Cloudflare, Tailscale, Caddy, or SSH -R tunnel domains here.',
+            )}
+          </p>
           {publicUrl || isServiceNode ? (
             <label className="dsrc-check">
               <input
@@ -383,13 +502,10 @@ export function SettingsSection({
             </p>
           ) : null}
 
-          {isServiceNode && !publicUrl ? (
+          {collapsedGateway ? (
             <details className="dsrc-networks">
               <summary>
-                {text(
-                  '隧道网关高级设置（仅自建 frpc 网关需要）',
-                  'Tunnel gateway settings (only for self-managed frpc)',
-                )}
+                {text('固定公网域名设置（自建反代 / 隧道网关）', 'Fixed public domain (self-managed proxy or tunnel)')}
               </summary>
               <div className="dsrc-field">{gatewayConfig}</div>
             </details>

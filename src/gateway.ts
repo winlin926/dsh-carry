@@ -288,7 +288,7 @@ export class Gateway {
     return this.directDevice(req) ?? this.relayDevice(req) ?? this.options.pairing.authenticate(cookie(req))
   }
   private cookieHeader(credential: string, secure: boolean): string {
-    // Trust forwarded protocol only after fixed-domain Host admission; frpc targets this private port.
+    // Trust forwarded protocol only after fixed-domain Host admission; the reverse proxy or tunnel targets this private port.
     // Lax, not Strict: a link opened from another app (a QR scanner, a chat, a home-screen shortcut) is a
     // cross-site navigation, and Strict would leave a paired device looking unpaired. Cross-site requests
     // other than opening the app page are still refused below.
