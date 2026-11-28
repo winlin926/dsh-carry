@@ -83,7 +83,7 @@ dsh plugin --profile default add @winlin926/dsh-carry@latest
 | --- | --- | --- |
 | **Cloudflare Tunnel** | 有 Cloudflare 域名即可，免 VPS、边缘自动 HTTPS | [Cloudflare Tunnel 教程](docs/public-access-cloudflare.md) |
 | **Tailscale** | 免域名；`serve` 仅本人设备可连，`funnel` 任意浏览器直连 | [Tailscale 教程](docs/public-access-tailscale.md) |
-| **Caddy VPS** | 有云服务器即可，Caddy 自动 HTTPS 反代或 Compose 部署 [`remote-server`](docs/self-host.md) | [Caddy VPS 教程](docs/public-access-caddy.md) |
+| **Caddy VPS** | 有云服务器即可，Caddy 自动 HTTPS 反代（可搭配 `SSH -R` 反向隧道连回本机）或 Compose 部署 [`remote-server`](docs/self-host.md) | [Caddy VPS 教程](docs/public-access-caddy.md) |
 | **SakuraFrp** | 国内无 VPS 方案，支持自定义域名与自动申请证书 | [SakuraFrp 教程](docs/public-access-sakura.md) |
 
 - **单码融合入口**：配置好固定域名隧道网关或自托管节点后，公网与局域网共用同一个二维码，默认「局域网优先」，也可在设置中改选「公网优先」。

@@ -47,9 +47,9 @@ In your DNS provider, create a `CNAME` record for `dsh2.yourdomain.com` pointing
 ## Step 4: Set the Domain and Request Certificate in DSH
 
 1. Turn on **Remote Control** in DSH on your computer.
-2. Under **Public entry → Fixed public domain**, enter `https://dsh2.yourdomain.com` (no path) and click **Save**.
+2. Under **Connection settings → Public connection → Fixed public domain**, enter `https://dsh2.yourdomain.com` (no path) and click **Save**.
 3. Click **Check connectivity** to verify both tunnels and DNS reach `127.0.0.1:43128`.
-4. Once reachable, click **Request certificate**. `dsh-carry` obtains a Let's Encrypt certificate via HTTP-01 challenge through the HTTP tunnel and writes it to `C:\ProgramData\SakuraFrpService\FrpcWorkingDirectory` by default.
+4. Once reachable, expand **Local HTTPS certificate** and click **Request certificate**. `dsh-carry` obtains a Let's Encrypt certificate via HTTP-01 challenge through the HTTP tunnel and writes it to `C:\ProgramData\SakuraFrpService\FrpcWorkingDirectory` by default.
 5. When prompted that the certificate has been deployed, **reload the HTTPS tunnel** in the SakuraFrp launcher so `frpc` loads the new certificate.
 
 ## Step 5: Verify From Your Phone

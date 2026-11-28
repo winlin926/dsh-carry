@@ -35,7 +35,7 @@ Pick whichever tunnel you already use (target `43128`, **not** DSH's UI port `52
   ```sh
   ssh -NT -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -R 127.0.0.1:43128:127.0.0.1:43128 <user>@<YOUR-VPS-IP>
   ```
-  *(Consider `autossh` or a systemd user service to auto-reconnect.)*
+  *(Consider `autossh` or a systemd user service to auto-reconnect. The VPS `sshd` must keep `AllowTcpForwarding yes`, the OpenSSH default; otherwise `-R` fails with `administratively prohibited`.)*
 - **WireGuard / mesh VPN**: Point Caddy to `http://<desktop-wireguard-ip>:43128`.
 - **Self-hosted `frp`**: Forward a VPS loopback port (e.g., `127.0.0.1:43128`) to desktop `127.0.0.1:43128`.
 
@@ -70,7 +70,7 @@ sudo systemctl reload caddy
 
 ### 3. Configure DSH and Pair Your Phone
 
-1. Open DSH on your computer → **Remote Control → Connection settings**, enable remote access, and switch to Public mode (or add the domain under **Public nodes** and set it active).
+1. Open DSH on your computer → **Remote Control → Connection settings → Public connection**, and enable remote access.
 2. Enter `https://dsh.example.com` (origin only, no trailing path) and save.
 3. Click **Check connectivity** to confirm `GET https://dsh.example.com/.well-known/dsh-remote` returns your computer's fingerprint.
 4. Scan the pairing QR code over cellular data (off Wi‑Fi), verify that the **host fingerprint** matches on both devices, and click **Allow connection** on your computer.

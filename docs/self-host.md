@@ -30,10 +30,10 @@ cookie、authorization、identityKey、ciphertext 等字段打码；持久化内
 
 ## 2. 部署
 
-```powershell
+```sh
 git clone <this-repository> dsh
 cd dsh/remote-server
-Copy-Item .env.example .env
+cp .env.example .env
 ```
 
 编辑 `.env`，至少改这几项（其余保持默认即可）：
@@ -44,7 +44,7 @@ Copy-Item .env.example .env
 
 启动：
 
-```powershell
+```sh
 docker compose up -d --build
 docker compose ps
 ```
@@ -63,10 +63,10 @@ Caddy 首次启动会向 Let's Encrypt 申请证书（需要 DNS 已生效、80/
 
 ## 3. 健康检查
 
-```powershell
-curl.exe -sS https://relay.example.com/healthz
-curl.exe -sS https://relay.example.com/v1/config
-curl.exe -sS https://relay.example.com/.well-known/dsh-remote
+```sh
+curl -sS https://relay.example.com/healthz
+curl -sS https://relay.example.com/v1/config
+curl -sS https://relay.example.com/.well-known/dsh-remote
 ```
 
 `/healthz` 返回 `{"ok":true,"version":"<当前版本>"}`。
@@ -115,9 +115,9 @@ curl.exe -sS https://relay.example.com/.well-known/dsh-remote
 
 快照前停止服务端，完整保存数据卷；运行中的 SQLite 不能只复制主数据库文件而遗漏 WAL。
 
-```powershell
+```sh
 docker compose stop remote-server
-docker run --rm -v dsh-remote-server_data:/data:ro -v ${PWD}:/backup alpine tar czf /backup/data.tgz -C /data .
+docker run --rm -v dsh-remote-server_data:/data:ro -v "$(pwd)":/backup alpine tar czf /backup/data.tgz -C /data .
 docker compose start remote-server
 ```
 
@@ -125,7 +125,7 @@ docker compose start remote-server
 
 ## 6. 升级
 
-```powershell
+```sh
 git pull
 cd remote-server
 docker compose up -d --build

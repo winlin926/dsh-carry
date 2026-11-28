@@ -83,7 +83,7 @@ Pick any option below (no router port forwarding required):
 | --- | --- | --- |
 | **Cloudflare Tunnel** | Use a domain on Cloudflare DNS, no VPS, automatic HTTPS | [Cloudflare Tunnel guide](docs/public-access-cloudflare.en.md) |
 | **Tailscale** | No custom domain needed (`serve` for private tailnet, `funnel` for any phone browser) | [Tailscale guide](docs/public-access-tailscale.en.md) |
-| **Caddy VPS** | Run Caddy on a VPS with automatic HTTPS or the bundled [`remote-server`](docs/self-host.en.md) | [Caddy VPS guide](docs/public-access-caddy.en.md) |
+| **Caddy VPS** | Run Caddy on a VPS with automatic HTTPS (optionally over an `SSH -R` reverse tunnel), or deploy the bundled [`remote-server`](docs/self-host.en.md) | [Caddy VPS guide](docs/public-access-caddy.en.md) |
 | **SakuraFrp** | Mainland China FRP option supporting custom domains | [SakuraFrp guide](docs/public-access-sakura.en.md) |
 
 - **Unified QR entry**: With a fixed-domain HTTPS tunnel gateway or a self-hosted relay node configured, one QR code serves both LAN and public entries—defaulting to **LAN first** (switchable to **Public first** in settings).

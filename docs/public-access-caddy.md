@@ -33,7 +33,7 @@
   ```sh
   ssh -NT -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -R 127.0.0.1:43128:127.0.0.1:43128 <user>@<你的VPS-IP>
   ```
-  *（也可配合 `autossh` 做断线重连；`43128` 是 `dsh-carry` 网关端口，不要填 DSH 本体端口 `52728`。）*
+  *（也可配合 `autossh` 做断线重连；`43128` 是 `dsh-carry` 网关端口，不要填 DSH 本体端口 `52728`。VPS 的 `sshd` 需保留 `AllowTcpForwarding yes`（OpenSSH 默认开启），否则 `-R` 会报 `administratively prohibited`。）*
 - **方式 2：WireGuard / Tailscale 组网**：把 Caddy 上游指向 `<电脑在虚拟局域网的IP>:43128`。
 - **方式 3：自建 `frp`**：用一条 TCP 或 HTTP 代理把本机 `127.0.0.1:43128` 映射到 VPS 本地回环端口（如 `127.0.0.1:43128`）。
 
@@ -68,7 +68,7 @@ sudo systemctl reload caddy
 
 ### 3. 在 DSH 插件内配置并配对
 
-1. 在电脑端 DSH 打开「远程控制 → 连接设置」，开启连接并切换到公网模式（或在「公网节点」添加节点并设为当前）。
+1. 在电脑端 DSH 打开「远程控制 → 连接设置 → 公网连接」，开启连接。
 2. 在「固定公网域名」填入 `https://dsh.example.com`（只填 origin，不带路径），点击「保存」。
 3. 点击「检测连通性」，确认 `https://dsh.example.com/.well-known/dsh-remote` 返回正确的主机指纹。
 4. 手机用蜂窝网络扫码，核对两边显示的**主机指纹**一致后在电脑点击「允许连接」。

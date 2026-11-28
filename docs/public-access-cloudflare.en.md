@@ -73,7 +73,7 @@ ingress:
 
 ## Step 2: Configure DSH and Pair Your Phone
 
-1. Open DSH on your computer → **Remote Control → Connection settings**, enable remote access, and switch to Public mode (or add the URL under **Public nodes** and set it active).
+1. Open DSH on your computer → **Remote Control → Connection settings → Public connection**, and enable remote access.
 2. Enter `https://dsh.example.com` (origin only, no trailing path) and save.
 3. Click **Check connectivity**. `dsh-carry` probes `https://dsh.example.com/.well-known/dsh-remote` and confirms the responding host fingerprint matches your computer.
 4. Scan the pairing QR code over cellular data (off Wi‑Fi), verify that the **host fingerprint** shown on both screens matches, and click **Allow connection** on your computer.

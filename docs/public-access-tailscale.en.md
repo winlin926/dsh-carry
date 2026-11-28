@@ -61,7 +61,7 @@ Status output shows your URL, e.g. `https://my-desktop.tail12345.ts.net`. Stop l
 
 ### Configure DSH
 
-1. On your computer, open DSH → **Remote Control → Connection settings**, enable remote access, and switch to Public mode (or add the URL under **Public nodes** and set it active).
+1. On your computer, open DSH → **Remote Control → Connection settings → Public connection**, and enable remote access.
 2. Enter your exact `https://<machine>.<your-tailnet>.ts.net` origin (no trailing slash or path) and save.
 3. Click **Check connectivity** to verify `GET <origin>/.well-known/dsh-remote` returns your computer's fingerprint.
 
