@@ -2,9 +2,10 @@
 <h1>dsh-carry</h1>
 <p><strong>Pick up your DSH session on your phone.</strong></p>
 <p>
-  <img src="https://img.shields.io/static/v1?label=DSH&message=Plugin&color=8B4A38" height="20" alt="DSH | Plugin" />
+  <a href="https://awesome-dsh-plugin.com/p/winlin926/dsh-carry/"><img src="https://img.shields.io/static/v1?label=DSH&message=Market&color=8B4A38" height="20" alt="DSH | Market" /></a>
   <a href="https://github.com/winlin926/dsh-carry/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/winlin926/dsh-carry/ci.yml?branch=main&label=build" height="20" alt="build" /></a>
   <a href="https://www.npmjs.com/package/@winlin926/dsh-carry"><img src="https://img.shields.io/npm/v/@winlin926/dsh-carry?label=npm" height="20" alt="npm" /></a>
+  <a href="https://www.npmjs.com/package/@winlin926/dsh-carry"><img src="https://img.shields.io/npm/dm/@winlin926/dsh-carry?label=downloads" height="20" alt="downloads" /></a>
   <a href="https://github.com/winlin926/dsh-carry/blob/main/package.json"><img src="https://img.shields.io/node/v/@winlin926/dsh-carry?label=node" height="20" alt="node" /></a>
   <a href="https://github.com/winlin926/dsh-carry/blob/main/LICENSE"><img src="https://img.shields.io/github/license/winlin926/dsh-carry?label=license" height="20" alt="license" /></a>
 </p>
@@ -14,12 +15,8 @@
 
 `dsh-carry` is a remote-control plugin for DeepSeek Harness (DSH) that lets you reach your running DSH instance from a phone browser. After a one-time QR scan pairing, you can continue conversations, approve tool calls, download workspace files, and preview HTML outputs—everything served directly by your host computer.
 
-<details>
-<summary><strong>Show the phone recording (26-second GIF): answer a question card, watch a tool run, open an HTML preview</strong></summary>
-
 <p align="center"><img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/demo.gif" width="320" alt="Screen recording: answering a question card, watching a tool run, and opening an HTML preview on a phone" /></p>
-
-</details>
+<p align="center"><em>26-second phone recording: question card · tool output · workspace HTML preview</em></p>
 
 ## 📦 Install and pair your phone
 
@@ -43,7 +40,7 @@ Pair in three steps:
 Need access outside your local network? See [Connecting from another network](#-connecting-from-another-network).
 
 <details>
-<summary><strong>Show the plugin panel</strong></summary>
+<summary><strong>Show the computer plugin panel</strong></summary>
 
 <p align="center"><img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/desktop-connect.png" width="720" alt="Remote Control panel on the computer with a pairing QR code and a list of authorized devices" /></p>
 
@@ -59,26 +56,22 @@ Need access outside your local network? See [Connecting from another network](#-
   <tr><td>Both public and LAN routes are configured</td><td>Establish a background LAN WebRTC channel automatically and fail over without re-scanning.</td></tr>
 </table>
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-tools.jpg" width="31%" alt="Workspace tools on the phone" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-html-preview.jpg" width="31%" alt="A workspace HTML preview on the phone" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-chat.jpg" width="31%" alt="An existing conversation with its message input on the phone" />
+</p>
+<p align="center"><em>Workspace tools · HTML preview · Ongoing conversation</em></p>
+
 <details>
-<summary><strong>Show phone screenshots (6 images)</strong></summary>
+<summary><strong>Show more phone screenshots (3 images)</strong></summary>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-boot.png" width="45%" alt="Boot screen preview with a theme selector while DSH checks plugins" />
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-session.jpg" width="45%" alt="A new DSH session in the phone browser" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-boot.png" width="31%" alt="Boot screen preview with a theme selector while DSH checks plugins" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-session.jpg" width="31%" alt="A new DSH session in the phone browser" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-settings.png" width="31%" alt="DSH general settings on the phone" />
 </p>
-<p align="center">Boot screen preview · New session</p>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-chat.jpg" width="45%" alt="An existing conversation with its message input on the phone" />
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-tools.jpg" width="45%" alt="Workspace tools on the phone" />
-</p>
-<p align="center">Ongoing conversation · Workspace tools</p>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-html-preview.jpg" width="45%" alt="A workspace HTML preview on the phone" />
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-settings.png" width="45%" alt="DSH general settings on the phone" />
-</p>
-<p align="center">HTML preview · Settings</p>
+<p align="center">Boot screen preview · New session · Settings</p>
 
 </details>
 
@@ -89,6 +82,14 @@ Follow the [SakuraFrp public-access walkthrough (Chinese)](docs/public-access-sa
 - **Unified QR entry**: With a fixed-domain HTTPS tunnel gateway or a self-hosted relay node configured, one QR code serves both LAN and public entries—defaulting to **LAN first** (switchable to **Public first** in settings).
 - **Dual-route failover**: Even when you open DSH via your public domain on the same Wi‑Fi, the client brings up a direct LAN WebRTC channel and falls back smoothly if the public route drops, without asking you to scan again. When leaving the LAN, open the public URL shown in the panel.
 - **Host fingerprint verification**: During first-time public pairing, both your phone and computer display the host fingerprint so you can verify you are connecting to your own machine.
+
+Self-hosted relay quick start (`remote-server/`, requires Docker Engine 24+ with Compose v2 and open TCP ports `80`/`443`):
+
+```sh
+git clone https://github.com/winlin926/dsh-carry.git && cd dsh-carry/remote-server
+cp .env.example .env   # set SITE_ADDRESS, PUBLIC_ORIGIN (https://...), and ACME_EMAIL
+docker compose up -d --build
+```
 
 > **🔒 Security boundary: approve only devices you trust.**
 >

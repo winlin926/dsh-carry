@@ -2,9 +2,10 @@
 <h1>dsh-carry</h1>
 <p><strong>电脑上的 DSH 会话，拿起手机接着用。</strong></p>
 <p>
-  <img src="https://img.shields.io/static/v1?label=DSH&message=Plugin&color=8B4A38" height="20" alt="DSH | Plugin" />
+  <a href="https://awesome-dsh-plugin.com/p/winlin926/dsh-carry/"><img src="https://img.shields.io/static/v1?label=DSH&message=Market&color=8B4A38" height="20" alt="DSH | Market" /></a>
   <a href="https://github.com/winlin926/dsh-carry/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/winlin926/dsh-carry/ci.yml?branch=main&label=build" height="20" alt="build" /></a>
   <a href="https://www.npmjs.com/package/@winlin926/dsh-carry"><img src="https://img.shields.io/npm/v/@winlin926/dsh-carry?label=npm" height="20" alt="npm" /></a>
+  <a href="https://www.npmjs.com/package/@winlin926/dsh-carry"><img src="https://img.shields.io/npm/dm/@winlin926/dsh-carry?label=downloads" height="20" alt="downloads" /></a>
   <a href="https://github.com/winlin926/dsh-carry/blob/main/package.json"><img src="https://img.shields.io/node/v/@winlin926/dsh-carry?label=node" height="20" alt="node" /></a>
   <a href="https://github.com/winlin926/dsh-carry/blob/main/LICENSE"><img src="https://img.shields.io/github/license/winlin926/dsh-carry?label=license" height="20" alt="license" /></a>
 </p>
@@ -14,12 +15,8 @@
 
 `dsh-carry` 是 DeepSeek Harness（DSH）的远程控制插件，让你用手机浏览器接入电脑上正在运行的 DSH 实例。扫码配对后即可继续会话、审批工具请求、查看工作区文件或预览 HTML 页面——可用的会话、模型与工具完全由电脑端宿主决定，手机只是另一块屏幕。
 
-<details>
-<summary><strong>查看实机录屏（26 秒 GIF）：回答提问卡片、查看工具输出、打开 HTML 预览</strong></summary>
-
 <p align="center"><img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/demo.gif" width="320" alt="手机上回复提问卡片、查看工具执行结果并打开工作区 HTML 预览的实机录屏" /></p>
-
-</details>
+<p align="center"><em>26 秒实机录屏：回答提问卡片 · 查看工具输出 · 打开工作区 HTML 预览</em></p>
 
 ## 📦 安装与首次连接
 
@@ -43,7 +40,7 @@ dsh plugin --profile default add @winlin926/dsh-carry@latest
 需要在外出或跨网络环境下连接，请参考下方的[公网连接说明](#-离开同一-wi-fi-后怎么连)。
 
 <details>
-<summary><strong>查看插件面板截图</strong></summary>
+<summary><strong>查看电脑端面板截图</strong></summary>
 
 <p align="center"><img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/desktop-connect.png" width="720" alt="电脑端远程控制面板，显示配对二维码和已授权设备列表" /></p>
 
@@ -59,26 +56,22 @@ dsh plugin --profile default add @winlin926/dsh-carry@latest
   <tr><td>同时配置了公网与局域网</td><td>公网访问且同处局域网时自动建立 WebRTC 直连，主线波动时无感切换、无需重新扫码。</td></tr>
 </table>
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-tools.jpg" width="31%" alt="手机上的工作区工具与审批入口" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-html-preview.jpg" width="31%" alt="手机上的工作区 HTML 预览" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-chat.jpg" width="31%" alt="手机上已有的对话和消息输入框" />
+</p>
+<p align="center"><em>工作区工具 · HTML 预览 · 继续对话</em></p>
+
 <details>
-<summary><strong>查看手机端截图（6 张）</strong></summary>
+<summary><strong>查看更多手机端截图（3 张）</strong></summary>
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-boot.png" width="45%" alt="启动页预览，顶部可选主题，中央显示插件检查进度" />
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-session.jpg" width="45%" alt="手机浏览器中的 DSH 新会话" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-boot.png" width="31%" alt="启动页预览，顶部可选主题，中央显示插件检查进度" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-session.jpg" width="31%" alt="手机浏览器中的 DSH 新会话" />
+  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-settings.png" width="31%" alt="手机上的 DSH 通用设置" />
 </p>
-<p align="center">启动页预览 · 新会话</p>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-chat.jpg" width="45%" alt="手机上已有的对话和消息输入框" />
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-tools.jpg" width="45%" alt="手机上的工作区工具入口" />
-</p>
-<p align="center">继续对话 · 工作区工具</p>
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-html-preview.jpg" width="45%" alt="手机上的工作区 HTML 预览" />
-  <img src="https://raw.githubusercontent.com/winlin926/dsh-carry/main/assets/mobile-settings.png" width="45%" alt="手机上的 DSH 通用设置" />
-</p>
-<p align="center">HTML 预览 · 设置</p>
+<p align="center">启动页预览 · 新会话 · 通用设置</p>
 
 </details>
 
