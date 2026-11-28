@@ -4,11 +4,11 @@
 
 | 能力 | 宿主接口或服务 | 说明 |
 |---|---|---|
-| 认证网关 | `connection.authorizeIndex` / `connection.requestRejection` | 远程请求先过设备授权，再用插件持有的宿主 cookie 转发；宿主 cookie 每 12 小时续一次，401 时立即重取 |
+| 认证网关 | `connection.authentication`（0.2.3+）/ `connection.authorizeIndex`（0.2.2） | 远程请求先过设备授权，再用插件内部凭据（0.2.3+ 注册内部 peer 会话；0.2.2 持有宿主 cookie 每 12 小时续期，401 时重取）转发给宿主 |
 | 首页 | 宿主 `GET /` | 原样取回并注入 `/rc/boot.js`；不缓存页面、不改写宿主资源，手机界面永远等于宿主当前版本 |
 | 资源与接口 | 透明代理 | `/assets/*`、插件模块、API、WebSocket 全部转发；剔除 `set-cookie`、归一 `accept-encoding`、重写回环 `location` |
 | 条件请求 | 宿主已发出的 `etag` | 原样透传；`304` 只补 `vary`，不加 `content-encoding`、不重复压缩，`range` 请求也不重压 |
-| WebSocket 压缩 | `ws` 的 `perMessageDeflate` | 手机与宿主两段都开，长会话历史的首屏明显变快；配置项 `websocketCompression: false` 可关掉 |
+| WebSocket 传输 | `ws`（`perMessageDeflate` + 隧道分片） | 手机与宿主两端默认启用压缩以加快长会话首屏（`websocketCompression: false` 可关掉）；公网中继隧道超长消息自动分片传输与重组 |
 | 扫码配对 | `PairingService`、`manage` | 首次批准只能在本机面板完成；公网入口先展示节点身份并按主机指纹双端确认 |
 | 设备与撤销 | `devices.json`、网关注册表 | 撤销后立即断开该设备的在线连接与文件预览；旧公网授权在升级时显式标记为需重新配对 |
 | 局域网入口 | 网卡枚举 | 虚拟网卡 / 隧道地址排在最后，不可达地址不展示 |
@@ -17,8 +17,8 @@
 | 插件更新 | 官方插件管理器 | 仅本机面板检查与安装兼容正式版；重启要求由管理器结果决定 |
 | 双线路重连 | 同源探测、WebRTC DataChannel | 在已授权页面协商直连并验证可达性。HTTP、WebSocket、SSE 使用当前线路，切换时恢复宿主连接。无公共 STUN/TURN 依赖 |
 | 证书 | ACME HTTP-01、SakuraFrp 目录约定 | 并发操作复用同一申请；只写证书文件，签发和部署前复核域名与端口 |
-| 本机管理 | `MANAGE_PATH`（仅回环 + 宿主认证） | 带 `REMOTE_MARK` 的请求一律拒绝；配对批准、域名和证书管理只允许本机 |
-| 桌面面板 | `slots`（`settings.section`、`settings.section.icon`、`sidebar.footer.action`） | 官方侧栏底部按钮；宽屏双列、窄屏单列，不搬移宿主 DOM |
+| 本机管理 | `MANAGE_PATH`（仅回环 + 宿主认证） | 带 `REMOTE_MARK` 或内部网关 cookie 的转发请求一律拒绝；配对批准、添加/检测/切换/删除公网节点与证书管理只允许本机 |
+| 桌面面板 | `slots`（`settings.section`、`settings.section.icon`、`sidebar.footer.action`） | 官方侧栏底部按钮；宽屏双列、窄屏单列，不搬移宿主 DOM；随宿主语言切换中英文，非本机会话只显示精简连接摘要 |
 | 自动化 | 宿主界面与原生接口 | 手机直接使用宿主的自动化管理；插件不另设创建任务的桥接接口 |
 | 手机文件预览 | `/rc/workspace-file` + 预览站点 | HTML 使用沙箱站点。在支持 Service Worker 的 HTTPS 页面上，已打开的手机会话可以通过直连传输沙箱预览。普通文件发送前检查 48 MiB 上限 |
 | boot 脚本 | `/rc/boot.js`（同源，非内联） | 本机文件链接、断线 / 撤销遮罩、boot 报告、拒绝浏览器翻译提示 |

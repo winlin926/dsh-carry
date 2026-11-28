@@ -14,7 +14,7 @@
 `GET /.well-known/dsh-remote`（`application/json; charset=utf-8`、`cache-control: no-store`、不返回 3xx）：
 
 ```json
-{"protocol":2,"kind":"service","name":"我的公网节点","version":"0.6.2","capabilities":["pairing","cache","official-ui"],"node":{"id":"<base64url 43 字符>","fingerprint":"<32 位小写 hex>","publicKey":"<base64url SPKI DER，Ed25519 44 字节 → 59 字符>"}}
+{"protocol":2,"kind":"service","name":"我的公网节点","version":"<当前版本>","capabilities":["pairing","cache","official-ui"],"node":{"id":"<base64url 43 字符>","fingerprint":"<32 位小写 hex>","publicKey":"<base64url SPKI DER，Ed25519 44 字节 → 59 字符>"}}
 ```
 
 - `kind` 固定 `"service"`；`protocol` 为数字 `2`，客户端必须拒绝其他值。
@@ -95,12 +95,12 @@ Host ───HTTPS/WSS──▶                                              �
 ### Host 反向隧道（`/v1/tunnel`）
 
 - Host 用注册返回的凭证以 `Authorization: Bearer` 连接 `wss://<node>/v1/tunnel`；10s 内发 `hello`（`hostId`、`version`、`capabilities`，能力取值 `http`/`ws`/`assets`）。同 `hostId` 的新连接以 4001 关闭旧连接。
-- 帧：`http.request/body/body.end/cancel`、`http.response/chunk/end/error`、`ws.open/ack/frame/close`、`ping/pong`、`pair.request/approve/reject/complete`；帧头 ≤16 KiB、负载 ≤48 KiB，更大的 body 由发送端切片、接收端重组。
-- 配对帧：`pair.request`（Server→Host），`pair.approve`/`pair.reject`（Host→Server），`pair.complete`（Server→Host）；Host 的决定失败只记日志，不回错误帧。
+- 帧：`http.request/body/body.end/cancel`、`http.response/chunk/end/error`、`ws.open/ack/frame/close`、`ping/pong`、`pair.request/approve/reject/complete`；帧头 ≤16 KiB、负载 ≤48 KiB，更大的 body 与 WebSocket 超长消息均由发送端切片、接收端自动重组。
+- 配对帧：`pair.request`（Server→Host），`pair.approve`/`pair.reject`（Host→Server），`pair.complete`（Server→Host，配对完成通知精确投递一次）；Host 的决定失败只记日志，不回错误帧。
 - 限制：20s ping 心跳 / 60s 失联断开、`bufferedAmount` 1 MiB 高水位背压、每 Host 64 个并发中继、每设备 16 个并发中继。
 - 设备流量：已配对设备发往节点的 HTTP/WebSocket 请求由 `tunnel/proxy.ts` 经同一隧道转发给 Host；节点只在隧道断开时拒绝。
 
-### 安全边界
+### 安全与设计边界
 
 - **节点能看到转发内容**：节点终止 TLS 后代理 HTTP/SSE/WebSocket 流量，节点或隧道运营者可能看到转发给本机的请求与内容；不提供端到端加密。发行方不托管任何节点。
 - 不记录：私钥、cookie 明文、配对票据明文、claim token、聊天/审批内容、转发密文正文；日志只写事件名、状态码、耗时、脱敏后的设备标签。
@@ -108,16 +108,7 @@ Host ───HTTPS/WSS──▶                                              �
 - 注册默认开放，但注册本身不授予任何访问权：只有「手机确认 + 电脑批准 + 指纹一致」才产生设备授权；注册与配对均有限流。
 - `X-Forwarded-*` 仅在 `TRUST_PROXY=1` 时信任；默认按直连地址限流。
 - 全局限流 + 端点级限流（注册、claim、confirm 单独收紧），超限 `429` 并带 `Retry-After`。
-- 单实例设计：SQLite + 内存在线表；多实例需要共享数据库与在线协调，不在本实现范围。
-
-### 已知问题与风险
-
-1. 隧道帧编码约束：`pair.request.verificationCode` 为 8 位数字字符串，`/pair` 页面不读取、不显示、不参与判定；`identityKeySchema` 为 40–120 字符 Base64URL（容纳 59 字符的 SPKI DER，旧的 43 字符值仍合法），DER 结构由节点用 `createPublicKey` 校验。
-2. 本节点不实现 WebRTC：设备流量一律经 Host 反向隧道转发；不做 LAN/P2P。
-3. 真实 TLS 未在本机实测：TLS 由 Caddy 终止（compose 提供）。
-4. 多实例不支持：在线状态与转发成员表在进程内存，SQLite 也是单写者；横向扩展需要 PostgreSQL 与共享在线协调。
-5. 静态资源存 SQLite BLOB，适合单节点与中小体积资源（默认上限 16MiB/个），不适合大文件或 CDN 级流量。
-6. `node-identity.json` 只含公钥，但它是节点指纹的唯一来源：部署时需备份；删除或损坏（不做静默重建）都会改变节点身份，已信任旧指纹的客户端需要重新确认。
+- **单实例与中继定位**：`remote-server` 仅承担公网反向隧道与静态资源（SQLite BLOB，默认单文件上限 16 MiB）中继，不参与局域网 P2P（局域网 WebRTC 直连由插件端直接在手机浏览器与本机之间协商）；进程内维护在线成员表且 SQLite 为单写者，部署时保持单副本即可（已支持多台 Host 与多台手机接入）。
 
 ## 自测
 
@@ -131,7 +122,7 @@ npm test
 node dist/remote-server/src/main.js   # 可用 PORT/DATA_DIR 临时指定
 ```
 
-`npm test` 先 `tsc` 构建，再用 `node --test` 直接跑 `test/*.test.ts`（Node 24 类型剥离，测试导入编译产物），共 6 个文件 57 个用例。
+`npm test` 先 `tsc` 构建，再用 `node --test` 运行 `test/*.test.ts` 集成测试（Node 24 类型剥离，测试导入编译产物）。
 
 ## 故障排查
 

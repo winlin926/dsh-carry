@@ -6,6 +6,7 @@
 
 ```powershell
 pnpm install --frozen-lockfile --ignore-scripts
+pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build

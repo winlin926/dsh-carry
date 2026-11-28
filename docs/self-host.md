@@ -22,6 +22,7 @@ cookie、authorization、identityKey、ciphertext 等字段打码；持久化内
 | 443 | TCP | HTTPS + WSS `/v1/tunnel`（Host 反向隧道） |
 
 - Docker Engine 24+ 与 Compose v2。
+- **单实例部署**：在线转发成员表保存在进程内存中，持久化采用单写者 `node:sqlite`。单个 `remote-server` 容器已可同时服务多台电脑与多台手机，请不要对服务端做多副本水平扩容。
 
 ## 2. 部署
 
@@ -88,6 +89,8 @@ curl.exe -sS https://relay.example.com/.well-known/dsh-remote
 小写十六进制；界面上展示为 8 组 4 位大写，如 `0E2E-A5C3-9BEC-BE17-4B29-8006-E0B1-4EA0`。
 `/v1/config` 返回公开配置（协议、类型、名称、版本、能力），不含任何密钥。
 
+> 仓库 CI 仅在本地容器做 HTTP 冒烟校验；公网首次上线或更换域名后，请务必用真实的 `https://` 域名跑通以上三条检查（不加 `-k`），确认 Caddy 已成功签发并加载正式 TLS 证书。
+
 ## 4. 接入 Host 与手机
 
 1. 在 Host（电脑上的 DSH）的公网节点列表里填 `https://relay.example.com` 并添加。插件会请求
@@ -148,15 +151,7 @@ docker compose up -d --build
   静态资源内容。
 - 传输安全由 Caddy 终止 TLS；服务端只在 `TRUST_PROXY=1` 时信任 `X-Forwarded-*`。
 - 所有写接口校验 Origin，设备 cookie 为 `Secure; HttpOnly; SameSite=Strict` 并绑定 HTTPS origin。
-- 有多层限流（HTTP、注册、配对、升级、隧道帧），隧道帧头上限 16 KiB、负载上限 48 KiB（大包由发送端切片），另有背压与空闲超时。
+- 有多层限流（HTTP、注册、配对、升级、隧道帧），隧道帧头上限 16 KiB、负载上限 48 KiB（大包及 WebSocket 超长消息由发送端自动切片、接收端重组），另有背压与空闲超时。
   注册默认开放由这些限流与双端授权共同兜底；若需要限制来源，请在 Caddy/反向代理层做 IP 白名单，
   不要引入应用内共享令牌。
-
-## 9. 已知限制
-
-- **单实例**：在线状态与转发成员表在进程内存，SQLite 为单写者；多实例需要 PostgreSQL 与共享在线协调，
-  当前不支持水平扩展。
-- 设备公网流量经 Host 反向隧道（`/v1/tunnel`）转发；局域网入口直接访问 Host 网关，不实现 WebRTC/P2P。
-- 本仓库交付环境未实测真实 TLS 证书签发；上线前请按第 3 节验收。
-- 设备身份统一用 Base64URL(SPKI DER)（与 `src/host-identity.ts` 一致）：Host 与手机提交的都是 SPKI DER 公钥，
-  节点只做 DER 合法性校验与 sha256 推导，不持有、不上传任何私钥。
+- `remote-server` 仅承担公网 `/v1/tunnel` 反向隧道与静态资产中继，不参与局域网 P2P（局域网 WebRTC 直连由插件端直接在手机与电脑之间协商建立）。
