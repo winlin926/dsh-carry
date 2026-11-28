@@ -77,7 +77,14 @@ Need access outside your local network? See [Connecting from another network](#-
 
 ## 🌐 Connecting from another network
 
-Follow the [SakuraFrp public-access walkthrough (Chinese)](docs/public-access-sakura.md) for an end-to-end tunnel setup, or deploy the bundled [`remote-server`](docs/self-host.md) relay on your own server (no inbound firewall ports required on your desktop).
+Pick any option below (no router port forwarding required):
+
+| Option | Highlights | Guide |
+| --- | --- | --- |
+| **Cloudflare Tunnel** | Use a domain on Cloudflare DNS, no VPS, automatic HTTPS | [Cloudflare Tunnel guide](docs/public-access-cloudflare.en.md) |
+| **Tailscale** | No custom domain needed (`serve` for private tailnet, `funnel` for any phone browser) | [Tailscale guide](docs/public-access-tailscale.en.md) |
+| **Caddy VPS** | Run Caddy on a VPS with automatic HTTPS or the bundled [`remote-server`](docs/self-host.en.md) | [Caddy VPS guide](docs/public-access-caddy.en.md) |
+| **SakuraFrp** | Mainland China FRP option supporting custom domains | [SakuraFrp guide](docs/public-access-sakura.en.md) |
 
 - **Unified QR entry**: With a fixed-domain HTTPS tunnel gateway or a self-hosted relay node configured, one QR code serves both LAN and public entries—defaulting to **LAN first** (switchable to **Public first** in settings).
 - **Dual-route failover**: Even when you open DSH via your public domain on the same Wi‑Fi, the client brings up a direct LAN WebRTC channel and falls back smoothly if the public route drops, without asking you to scan again. When leaving the LAN, open the public URL shown in the panel.
@@ -98,7 +105,7 @@ docker compose up -d --build
 > - This plugin does not add end-to-end encryption on top of the relay, and the maintainers operate no public servers.
 > - Only connect through nodes you host yourself or explicitly trust.
 
-More guides: [Self-hosting guide](docs/self-host.md) · [Public node protocol](docs/public-node.md) · [Plugin capabilities and host interfaces](docs/features.md) · [Verification guide](docs/verification.md) · [Release notes](docs/release-notes.md) *(all in Chinese)*
+More guides: [Self-hosting guide](docs/self-host.en.md) · [Public node protocol (Chinese)](docs/public-node.md) · [Plugin capabilities (Chinese)](docs/features.md) · [Verification guide (Chinese)](docs/verification.md) · [Release notes (Chinese)](docs/release-notes.md)
 
 ## 📄 Credits and license
 

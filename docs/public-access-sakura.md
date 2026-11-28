@@ -1,3 +1,7 @@
+<p>
+  简体中文 · <a href="public-access-sakura.en.md">English</a>
+</p>
+
 # 用 SakuraFrp 让手机从公网连接电脑
 
 本教程以 Windows、`dsh-carry` 和 SakuraFrp（樱花 FRP，`natfrp.com`）为例，带你从没有域名开始，配置 HTTPS 公网入口。你也可以使用其他支持自定义域名、HTTP/HTTPS 转发并允许部署自有证书的 FRP 服务；关键是把 HTTP 80 和 HTTPS 443 都转发到这台电脑的 `127.0.0.1:43128`。

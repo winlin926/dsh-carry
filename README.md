@@ -77,7 +77,14 @@ dsh plugin --profile default add @winlin926/dsh-carry@latest
 
 ## 🌐 离开同一 Wi-Fi 后怎么连？
 
-从域名配置、内网穿透到手机端验证的完整步骤，请参阅 [SakuraFrp 公网连接教程](docs/public-access-sakura.md)；如果你有自己的云服务器，也可以部署仓库内置的 [`remote-server`](docs/self-host.md) 反向隧道中继节点（电脑端无需开放任何入站端口）。
+按你的网络与资源条件任选一种即可（电脑无需开放路由器入站端口）：
+
+| 方案 | 特点 | 教程 |
+| --- | --- | --- |
+| **Cloudflare Tunnel** | 有 Cloudflare 域名即可，免 VPS、边缘自动 HTTPS | [Cloudflare Tunnel 教程](docs/public-access-cloudflare.md) |
+| **Tailscale** | 免域名；`serve` 仅本人设备可连，`funnel` 任意浏览器直连 | [Tailscale 教程](docs/public-access-tailscale.md) |
+| **Caddy VPS** | 有云服务器即可，Caddy 自动 HTTPS 反代或 Compose 部署 [`remote-server`](docs/self-host.md) | [Caddy VPS 教程](docs/public-access-caddy.md) |
+| **SakuraFrp** | 国内无 VPS 方案，支持自定义域名与自动申请证书 | [SakuraFrp 教程](docs/public-access-sakura.md) |
 
 - **单码融合入口**：配置好固定域名隧道网关或自托管节点后，公网与局域网共用同一个二维码，默认「局域网优先」，也可在设置中改选「公网优先」。
 - **双线路自动容灾**：同一局域网下即使从公网入口打开，插件也会在后台预建 WebRTC 局域网直连；公网线路中断时自动切换，无需重新扫码。离开局域网时，直接打开面板显示的公网地址即可接入。

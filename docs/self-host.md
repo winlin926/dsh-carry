@@ -1,3 +1,7 @@
+<p>
+  简体中文 · <a href="self-host.en.md">English</a>
+</p>
+
 # 自托管公网中继节点（remote-server）
 
 `remote-server/` 是一个可自托管的公网中继节点：它让已配对的 Host（电脑上的 DSH）与手机在
